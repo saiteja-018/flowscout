@@ -1,0 +1,59 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Browser profiles
+browser_data/
+playwright-report/
+test-results/
+.ruff_cache/
+
+# Generated artifacts (keep reports/ structure but ignore temp output)
+*.pyc
+
+# Docker
+.docker/
+
+# Temporary test output
+tmp/
+temp/
+
+# Transient host-process logs (logs/commands.jsonl is committed evidence)
+logs/target-server.log
+logs/*.log
+!logs/commands.jsonl
+
+# ZCode session artifacts
+.zcode/

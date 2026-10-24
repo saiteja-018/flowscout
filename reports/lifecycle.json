@@ -1,0 +1,39 @@
+{
+  "cleanup_on_success": true,
+  "cleanup_on_failure": true,
+  "cleanup_on_interrupt": true,
+  "sandbox_names": [
+    "sbx-1r5jejp0as6b",
+    "sbx-1zs8ukf3x7k0",
+    "sbx-21hq2538m48h",
+    "sbx-5leihvw7ad3a",
+    "sbx-8n299d6ws2r1",
+    "sbx-8qcnrt5xprid",
+    "sbx-b5ctkj965erg",
+    "sbx-cfi37mnoect3",
+    "sbx-cz14iduf9zr9",
+    "sbx-e8cjbv3ly0hb",
+    "sbx-fhrzwy999bw1",
+    "sbx-gkx4544namkf",
+    "sbx-h4kbnnxrm3cg",
+    "sbx-inbij3f63iuk",
+    "sbx-je2so4f7c17h",
+    "sbx-k3epegp2rytp",
+    "sbx-k4wti7v7v8vv",
+    "sbx-lxrje10yey3m",
+    "sbx-pteuatux6pri",
+    "sbx-pxl57969jude",
+    "sbx-rziveieyv3x7",
+    "sbx-wh0r4eym5caw",
+    "sbx-wo178m318h1f",
+    "sbx-wxur0zdrchlk",
+    "sbx-x5u5b44aodx1"
+  ],
+  "verified_at": "2026-10-24T16:50:38.510729+00:00",
+  "evidence_paths": [
+    "reports/evidence/lifecycle-checks.json",
+    "logs/commands.jsonl",
+    "reports/failure_trace.jsonl"
+  ],
+  "note": "Success, raised-exception, and KeyboardInterrupt probes all observe the adapter after cleanup. Failure/interrupt probes are recorded in lifecycle-checks.json."
+}

@@ -1,0 +1,47 @@
+{
+  "jobs": [
+    {
+      "job_id": "job-001",
+      "sandbox_name": "sbx-cz14iduf9zr9",
+      "started_at": "2026-10-24T16:49:51.914900+00:00",
+      "end_time": "2026-10-24T16:49:53.435177+00:00",
+      "duration_s": 1.52,
+      "outcome": "success"
+    },
+    {
+      "job_id": "job-002",
+      "sandbox_name": "sbx-wxur0zdrchlk",
+      "started_at": "2026-10-24T16:49:53.435177+00:00",
+      "end_time": "2026-10-24T16:49:55.031496+00:00",
+      "duration_s": 1.61,
+      "outcome": "success"
+    },
+    {
+      "job_id": "job-003",
+      "sandbox_name": "sbx-5leihvw7ad3a",
+      "started_at": "2026-10-24T16:49:55.031496+00:00",
+      "end_time": "2026-10-24T16:49:56.587978+00:00",
+      "duration_s": 1.55,
+      "outcome": "success"
+    },
+    {
+      "job_id": "job-004",
+      "sandbox_name": "sbx-cfi37mnoect3",
+      "started_at": "2026-10-24T16:49:56.587978+00:00",
+      "end_time": "2026-10-24T16:49:58.299581+00:00",
+      "duration_s": 1.72,
+      "outcome": "success"
+    },
+    {
+      "job_id": "job-005",
+      "sandbox_name": "sbx-rziveieyv3x7",
+      "started_at": "2026-10-24T16:49:58.299581+00:00",
+      "end_time": "2026-10-24T16:49:59.893501+00:00",
+      "duration_s": 1.59,
+      "outcome": "success"
+    }
+  ],
+  "mode": "sequential",
+  "parallelism": 1,
+  "breakage_notes": "These were sequential runs. No concurrent Celesto capacity was available, so no parallel latency or contention claim is made. At 1,000 users, queueing, per-tenant sandbox quotas, database connection pooling, and Celesto API rate limits would be the first bottlenecks."
+}

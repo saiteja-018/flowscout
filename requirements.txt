@@ -1,0 +1,20 @@
+# FlowScout core dependencies
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0
+psycopg2-binary>=2.9.9
+httpx>=0.27.0,<0.29
+python-dotenv>=1.0.0
+
+# Host-browser verification (mock mode uses a real local Chromium)
+playwright>=1.64.0
+
+# Tests
+pytest>=8.0
+pytest-asyncio>=0.23.0
+
+# Celesto Cloud live mode drives the same REST API as the celesto SDK/CLI
+# (https://api.celesto.ai/v1) over httpx, so the SDK is not required. The SDK
+# (pip install celesto) only builds on Linux; if present it is recorded as
+# evidence in reports/evidence/runtime-manifest.json. Without credentials or
+# a non-trial size, keep CELESTO_MODE=mock.

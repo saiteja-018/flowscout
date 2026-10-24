@@ -1,0 +1,9 @@
+{
+  "failed_step": 7,
+  "total_steps": 10,
+  "policy": "fresh",
+  "rationale": "A fresh replacement gives deterministic application state after an ambiguous checkout failure. The failed likely-billable sandbox is deleted first, a new sandbox is created, and the target fixture is reset. The Celesto Cloud surface inspected here does not expose snapshot/restore on CloudComputer, so the RolledBack lifecycle label is logical recovery only, not VM rollback.",
+  "trace_path": "reports/failure_trace.jsonl",
+  "failed_step_evidence": "HTTP 503 from the target checkout during the second application",
+  "replacement_observed": true
+}

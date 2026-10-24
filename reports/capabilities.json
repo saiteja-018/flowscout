@@ -1,0 +1,16 @@
+{
+  "execution_mode": "mock",
+  "live_celesto_verified": false,
+  "capabilities": [
+    {
+      "id": "browser",
+      "why": "The workflow's entire browser surface runs through the sandbox browser runtime: in live runs a Celesto browser-agent sandbox serves a CDP endpoint that Playwright connects to, so pages, screenshots, and the poisoned review are rendered inside the guest, never on the host. Mock runs replay the same validated action schema through a host Playwright stand-in.",
+      "evidence_path": "reports/evidence/actions.jsonl"
+    },
+    {
+      "id": "safety_hooks",
+      "why": "Every shell command the agent requests passes a deny-by-default allowlist policy in the control-plane adapter before any SDK dispatch; the prompt-injection command extracted from the customer review is blocked there and still audited. The Celesto Cloud SDK exposes no command callbacks, so the hook layer is enforced at this boundary instead of inside the guest.",
+      "evidence_path": "reports/evidence/containment.log"
+    }
+  ]
+}

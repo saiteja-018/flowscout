@@ -1,0 +1,47 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ledger}:${POSTGRES_PASSWORD:-ledger}@ledger:5432/${POSTGRES_DB:-ledger}
+      - FLOWSCOUT_LEDGER=postgres
+      - API_PORT=8080
+      - CELESTO_MODE=${CELESTO_MODE:-mock}
+      - CELESTO_API_KEY=${CELESTO_API_KEY:-}
+      - CELESTO_PROVIDER=${CELESTO_PROVIDER:-cloud}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+    depends_on:
+      ledger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  ledger:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-ledger}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-ledger}
+      - POSTGRES_DB=${POSTGRES_DB:-ledger}
+    volumes:
+      - ./seeds:/docker-entrypoint-initdb.d:ro
+      - ledger_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ledger} -d ${POSTGRES_DB:-ledger}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  ledger_data:

@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-10-23T18:02:08.730703+00:00",
+  "workflow": "live_sandbox_browser_smoke",
+  "execution_mode": "live",
+  "browser_runtime": "sandbox_playwright",
+  "live_celesto_verified": false,
+  "verification_scope": "Live-only single-sandbox browser smoke; verified only when live_celesto_verified is true. This is not the 20-run benchmark.",
+  "base_url": "https://threatened-resolved-exclusion-conditions.trycloudflare.com",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+  "python": "3.11.17",
+  "celesto_api_key_configured": true,
+  "celesto_template_id": "browser-agent",
+  "sandbox_names": [
+    "sbx-zj5656m5zadm"
+  ],
+  "provider_id": null,
+  "boot_to_ready_s": null,
+  "browser_cdp_url_available": null,
+  "probe": null,
+  "write": null,
+  "command": null,
+  "screenshot": {
+    "path": "reports/live-evidence/live-smoke.png",
+    "bytes": 0,
+    "sha256": null
+  },
+  "cleanup_ok": true,
+  "cleanup_message": "no sandbox created",
+  "failure": "CloudAPIError: Cloud API returned HTTP 429. Check the request and cloud dashboard before retrying. (free-trial create limit observed: 2 new sandboxes per hour)"
+}

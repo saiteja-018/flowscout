@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-10-23T16:57:17.898705+00:00",
+  "execution_mode": "live",
+  "live_celesto_verified": false,
+  "base_url": "https://threatened-resolved-exclusion-conditions.trycloudflare.com",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+  "python": "3.11.17",
+  "celesto_api_key_configured": true,
+  "inject_failure": false,
+  "sandbox_names": [
+    "sbx-t4zygcx6n0n6"
+  ],
+  "outcome": {
+    "success": false,
+    "classification": "environment_or_infrastructure_failure",
+    "defect": null,
+    "error": "RuntimeError: the live sandbox did not expose a CDP browser URL; refusing to substitute a host browser for a live run",
+    "sandbox_name": "sbx-t4zygcx6n0n6",
+    "wall_clock_s": 24.62,
+    "boot_to_ready_s": 10.817,
+    "cleanup_ok": true,
+    "test_paths": [],
+    "execution_mode": "live",
+    "browser_runtime": "celesto_cdp",
+    "actions": []
+  },
+  "failure": "",
+  "correction_note": "Corrected after discovering the original script set live_celesto_verified from execution_mode alone. The CDP browser step failed with HTTP 501, so live browser verification is false.",
+  "browser_failure": "HTTP 501: Interactive connections are not available for this computer yet"
+}
