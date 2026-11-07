@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-07T13:18:58.870587+00:00",
+  "generated_at": "2026-11-07T15:27:32.531459+00:00",
   "purpose": "Canonical index for live evidence. Only the current entry is presented as verification; historical failures and quarantined stale failures are kept for audit.",
   "current": {
     "path": "reports/live-evidence/live-visible-guest-2026-11-07.json",
@@ -64,11 +64,18 @@
     }
   ],
   "provenance": {
-    "git_commit": "8aed25e",
+    "git_commit": "d88f1204d2467d060e4467ad689c30155a487068",
     "git_branch": "main",
-    "git_dirty": null,
-    "git_untracked_count": null,
-    "captured_at": "2026-11-07T13:18:58.870587+00:00",
-    "note": "Index provenance reconstructed during the schema migration: the indexed run used commit 8aed25e on a clean tracked tree; the index was committed with the evidence at a7d476f."
+    "git_dirty": false,
+    "git_untracked_count": 3,
+    "captured_at": "2026-11-07T15:25:29.663138+00:00",
+    "note": "tracked tree clean at capture time; untracked files present"
+  },
+  "recovery": {
+    "path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json",
+    "status": "verified",
+    "live_guest_browser_verified": true,
+    "live_celesto_cdp_verified": false,
+    "note": "Single-sandbox live recovery workflow at commit d88f1204d2467d060e4467ad689c30155a487068; not the 20-run benchmark."
   }
 }

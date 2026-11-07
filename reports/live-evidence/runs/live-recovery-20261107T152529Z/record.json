@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-07T15:27:32.482823+00:00",
+  "run_id": "live-recovery-20261107T152529Z",
+  "execution_mode": "live",
+  "scope": "single-sandbox live recovery demonstration; not the 20-run benchmark",
+  "recovery_policy": "fresh",
+  "failure": {
+    "step": 7,
+    "http_status": 503,
+    "message": "Checkout returned HTTP 503 during step 7; no defect claim is made from this state",
+    "defect_claim": false
+  },
+  "failed_sandbox": {
+    "name": "sbx-5iqkdrtal0rs",
+    "provider_id": "cmp_085a2f7b4feb",
+    "template_id": "browser-agent",
+    "size_id": "micro",
+    "created_at": "2026-11-07T15:25:41.608491+00:00",
+    "boot_to_ready_s": 4.062,
+    "deleted_at": "2026-11-07T15:26:24.335790+00:00",
+    "cleanup_ok": true,
+    "delete_confirmation": "Celesto Cloud delete confirmed"
+  },
+  "replacement_sandbox": {
+    "name": "sbx-8iwumuzpidlv",
+    "provider_id": "cmp_d7bdd19895e2",
+    "template_id": "browser-agent",
+    "size_id": "micro",
+    "created_at": "2026-11-07T15:26:30.821130+00:00",
+    "boot_to_ready_s": 4.313,
+    "deleted_at": "2026-11-07T15:27:32.407060+00:00",
+    "cleanup_ok": true,
+    "delete_confirmation": "Celesto Cloud delete confirmed"
+  },
+  "retry": {
+    "success": true,
+    "classification": "confirmed_reproducible_defect",
+    "wall_clock_s": 122.75
+  },
+  "events": [
+    {
+      "ts": "2026-11-07T15:26:19.326894+00:00",
+      "event": "failure",
+      "state": "MidTaskFailure",
+      "detail": "Checkout returned HTTP 503 during step 7; no defect claim is made from this state"
+    },
+    {
+      "ts": "2026-11-07T15:26:19.326894+00:00",
+      "event": "policy_applied",
+      "state": "RolledBack",
+      "detail": "policy=fresh: deleting the failed sandbox, creating a clean replacement, and resetting the application fixture; not a VM snapshot rollback"
+    },
+    {
+      "ts": "2026-11-07T15:26:30.821130+00:00",
+      "event": "sandbox_recreated",
+      "state": "RolledBack",
+      "detail": "replacement=sbx-8iwumuzpidlv; provider=celesto_cloud"
+    },
+    {
+      "ts": "2026-11-07T15:26:48.905163+00:00",
+      "event": "state_transition",
+      "state": "Running",
+      "detail": "fresh fixture ready; retrying step 7"
+    },
+    {
+      "ts": "2026-11-07T15:26:48.905163+00:00",
+      "event": "step_start",
+      "state": "Running",
+      "detail": "Re-applying first coupon on fresh fixture"
+    },
+    {
+      "ts": "2026-11-07T15:26:54.777561+00:00",
+      "event": "step_start",
+      "state": "Running",
+      "detail": "Retrying second coupon application"
+    },
+    {
+      "ts": "2026-11-07T15:27:00.673290+00:00",
+      "event": "step_start",
+      "state": "Running",
+      "detail": "Applying third coupon"
+    },
+    {
+      "ts": "2026-11-07T15:27:06.570156+00:00",
+      "event": "step_start",
+      "state": "Running",
+      "detail": "Repeating coupon to confirm negative total"
+    },
+    {
+      "ts": "2026-11-07T15:27:27.279184+00:00",
+      "event": "step_start",
+      "state": "Running",
+      "detail": "Generating reproduction and regression tests"
+    },
+    {
+      "ts": "2026-11-07T15:27:27.325109+00:00",
+      "event": "state_transition",
+      "state": "Succeeded",
+      "detail": "defect reproduced and tests generated"
+    },
+    {
+      "ts": "2026-11-07T15:27:27.325109+00:00",
+      "event": "step_complete",
+      "state": "Succeeded",
+      "detail": "workflow complete"
+    },
+    {
+      "ts": "2026-11-07T15:27:32.407060+00:00",
+      "event": "state_transition",
+      "state": "Deleted",
+      "detail": "cleanup verified"
+    }
+  ],
+  "browser": {
+    "requested_visible": true,
+    "runtime": "guest_playwright_exec",
+    "cdp_gateway_used": false,
+    "cdp_gateway": "unavailable; the in-guest Playwright browser was used",
+    "note": "All browser actions ran inside the Celesto sandbox guest."
+  },
+  "evidence": {
+    "actions_log": {
+      "path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/evidence/actions.jsonl",
+      "sha256": "7b02f0e59a257c4a40338a017a424a7be0560864883bd15bb3611a4f13e97070",
+      "bytes": 11428,
+      "rows": 50,
+      "note": "Live action log spanning the failed sandbox sbx-5iqkdrtal0rs and replacement sbx-8iwumuzpidlv."
+    },
+    "screenshots": [
+      {
+        "archived_path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/evidence/step-04-1794065164476.jpg",
+        "sha256": "70f05d72b422f5f4d468ac049f07ad5aacb61def39eef906ffa7b9823590e275",
+        "width": 1257,
+        "height": 758,
+        "note": "Live screenshot captured by the guest browser: step-04-1794065164476.jpg"
+      },
+      {
+        "archived_path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/evidence/step-09-1794065247263.jpg",
+        "sha256": "91c08ce08c93cd0818afee1e0a7b0495aaf73a552ce5b2563dd47c84d817ee16",
+        "width": 1257,
+        "height": 799,
+        "note": "Live screenshot captured by the guest browser: step-09-1794065247263.jpg"
+      }
+    ],
+    "command_log": {
+      "path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/commands.jsonl",
+      "sha256": "624e674c1e493cb8eb7ee015e486b2791da17b87ca695c8890fb8db2de40bef4",
+      "bytes": 24268,
+      "rows": 89,
+      "note": "Live command audit for both sandboxes in the recovery run."
+    }
+  },
+  "trace": {
+    "path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/trace.jsonl",
+    "sha256": "cafba061da49fd9b1a285477efed514ef079b46f1320a88aef81bf393eac8fbb",
+    "bytes": 8744,
+    "rows": 34,
+    "note": "Lifecycle trace for the controlled 503 and fresh-sandbox recovery."
+  },
+  "provenance": {
+    "git_commit": "d88f1204d2467d060e4467ad689c30155a487068",
+    "git_branch": "main",
+    "git_dirty": false,
+    "git_untracked_count": 3,
+    "captured_at": "2026-11-07T15:25:29.663138+00:00",
+    "note": "tracked tree clean at capture time; untracked files present"
+  },
+  "limitations": [
+    "Two sandboxes were used: the failed sandbox and a fresh replacement.",
+    "This is one recovery demonstration, not a 20-run benchmark.",
+    "The platform CDP gateway was unavailable on this sandbox; the in-guest Playwright browser executed the workflow.",
+    "The free trial allows two new sandboxes per hour; a quota 429 is reported, not hidden.",
+    "The retained sandbox cmp_3e12f5354e89 is protected by CELESTO_KEEP_COMPUTER_IDS and was not touched.",
+    "Provenance: commit d88f1204d2467d060e4467ad689c30155a487068, git_dirty=False."
+  ]
+}

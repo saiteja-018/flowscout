@@ -26,6 +26,7 @@ guest Chromium applies `SAVE20` six times and the checkout total becomes
 |---|---|
 | Mock benchmark: 20/20 workflows, 100% success, median 2.730 s, P90 2.880 s, $0.00 | [`reports/reliability.json`](reports/reliability.json) |
 | Live single-sandbox run: SAVE20 stacking reproduced, cleanup confirmed, 102.39 s agent clock | [`reports/live-evidence/live-visible-guest-2026-11-07.json`](reports/live-evidence/live-visible-guest-2026-11-07.json) |
+| Live recovery: step-7 HTTP 503 → fresh sandbox → retry reproduced the defect; both sandboxes deleted | [`reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json`](reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json) |
 | Generated tests: 4/4 expectations met (reproduction + regression, broken + fixed) | [`reports/evidence/test-matrix.json`](reports/evidence/test-matrix.json) |
 | Controlled step-7 HTTP 503: fresh sandbox, redeploy, retry, complete | [`reports/failure_trace.jsonl`](reports/failure_trace.jsonl) |
 | Prompt-injection command blocked before dispatch, host canary unchanged | [`reports/containment.json`](reports/containment.json) |
@@ -208,8 +209,11 @@ historical failure in `reports/live-evidence/index.json`), so live browser work
 falls back to the guest's Playwright over exec. Single-sandbox runs on
 2026-11-05 and 2026-11-07 verified that fallback; the 2026-11-05 run used a
 headed Chromium on display `:99`, and the 2026-11-07 run is the current live
-record. The CDP gateway on a paid `standard` size is expected to work but is
-not yet verified from this repository. `live_celesto_verified` in
+record. A controlled recovery run at commit `d88f120` on 2026-11-07 exercised
+the step-7 HTTP 503 path with two Micro sandboxes and confirmed cleanup of both;
+its record is in the index's `recovery` section. The CDP gateway on a paid
+`standard` size is expected to work but is not yet verified from this
+repository. `live_celesto_verified` in
 `reports/reliability.json` reflects the evaluation mode; the separate
 `reports/live-evidence/` index distinguishes current verification, historical
 attempts, the controlled recovery record when present, and quarantined stale
@@ -531,6 +535,21 @@ reported with the reset guidance instead of being hidden, and
 The retained sandbox `cmp_3e12f5354e89` is protected by
 `CELESTO_KEEP_COMPUTER_IDS` and is never touched.
 
+#### Recorded recovery run
+
+The committed recovery record is
+[`live-recovery-20261107T152529Z`](reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json),
+run at commit `d88f120` on a clean tracked tree. The workflow armed the
+deterministic step-7 checkout failure, observed HTTP 503, recorded
+`MidTaskFailure` without claiming a product defect, deleted the failed sandbox
+`sbx-5iqkdrtal0rs`, created a fresh replacement `sbx-8iwumuzpidlv`, redeployed
+ShopDemo in-guest, retried the workflow, and reproduced the SAVE20 stacking
+defect. Both sandboxes were deleted with `Celesto Cloud delete confirmed`; the
+replacement booted in 4.313 s. The record is in the live index's `recovery`
+section, and the normal 2026-11-07 run remains `current`. Browser runtime:
+in-guest Playwright (`guest_playwright_exec`), because the Micro CDP gateway
+still returns HTTP 501.
+
 ### Tests
 
 ```powershell
@@ -644,7 +663,11 @@ Key evidence:
 - `reports/evidence/test-matrix.json` - four-case generated test proof.
 - `reports/evidence/runtime-manifest.json` - source hashes and runtime boundary.
 - `reports/live-evidence/index.json` - current, historical, and quarantined live
-  evidence; the 2026-11-07 single-sandbox visible guest-browser run is current.
+  evidence; the 2026-11-07 single-sandbox visible guest-browser run is current,
+  and the controlled 503 recovery record is in `recovery`.
+- `reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json` - the
+  controlled step-7 HTTP 503, fresh replacement sandbox, retry, and confirmed
+  cleanup of both sandboxes.
 
 ## Tradeoffs and limitations
 

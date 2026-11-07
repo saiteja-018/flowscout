@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "run_id": "live-recovery-20261107T152529Z",
+  "mode": "recovery",
+  "output_dir": "reports/live-evidence/runs/live-recovery-20261107T152529Z",
+  "record": "reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json",
+  "promoted": true,
+  "provenance": {
+    "git_commit": "d88f1204d2467d060e4467ad689c30155a487068",
+    "git_branch": "main",
+    "git_dirty": false,
+    "git_untracked_count": 3,
+    "captured_at": "2026-11-07T15:25:29.663138+00:00",
+    "note": "tracked tree clean at capture time; untracked files present"
+  },
+  "elapsed_s": 122.95,
+  "error": "",
+  "outcome": {
+    "success": true,
+    "classification": "confirmed_reproducible_defect",
+    "cleanup_ok": true,
+    "browser_runtime": "guest_playwright_exec",
+    "wall_clock_s": 122.75,
+    "sandbox_name": "sbx-8iwumuzpidlv"
+  }
+}
