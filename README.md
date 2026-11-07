@@ -444,6 +444,9 @@ because it can only pick among pre-validated candidates.
 - Python 3.11+
 - Node.js 22+ and npm
 - Chromium for Playwright (`python -m playwright install chromium`)
+- FFmpeg with an H.264/MP4 encoder for the walkthrough video (`apt install
+  ffmpeg`, `brew install ffmpeg`, or a full Windows build). Playwright's bundled
+  ffmpeg is VP9/WebM-only and is skipped automatically.
 - Docker Desktop (for the API + PostgreSQL stack; optional for the demo)
 - For live runs: a Celesto account with credit (the browser runtime needs a
   non-trial size) and `CELESTO_API_KEY`; no celesto SDK install is required.

@@ -26,7 +26,7 @@
     "app/main.py": "8de5d61229b950191f5c92fe129077b53ee96a999aad35f2870006a0ff4b60b8",
     "app/target_saas_app.py": "27a4d99c9cfc284565c588e1897aa5a0716e352cbf06f67fa12248fcab1d0921",
     "playwright.config.ts": "33a2a1067c209d5f356d8211cd56ad2aaf9b24dfe19d109dbf0f38372ada1a06",
-    "scripts/run_live_demo.py": "0a8211caebbbc16b9014f2850bc16a338b0373653a8846aa0538de31bfb8cad0",
+    "scripts/run_live_demo.py": "964ed0ad1e9db593c338e5690e0ed1ef7e64f0ffb7d4b17549b21ad07649a209",
     "scripts/run_live_single.py": "257c289a8d38c6009475e681d7444e38dfb84d2a94b35de6efa98844b48cfb93",
     "scripts/live_common.py": "28dc459cca8f8a9136122e06e34549eb90eacb38f6bbd17be5dba91cd76a4cce",
     "scripts/verify_submission.py": "fe2b310e4d6de4c5b98a17ea362c4bf2ba3cffbafe50ab3715c613eebd400e5d"
@@ -37,6 +37,6 @@
     "git_dirty": null,
     "git_untracked_count": null,
     "captured_at": "2026-11-07T12:48:55.320480+00:00",
-    "note": "The mock benchmark predates provenance capture and was generated from a working tree with uncommitted changes. Source hashes were refreshed during the schema migration and again for the CI dependency and line-ending fix; rerun the mock benchmark for a commit-pinned record."
+    "note": "The mock benchmark predates provenance capture and was generated from a working tree with uncommitted changes. Source hashes were refreshed during the schema migration and again for the CI dependency, line-ending, and walkthrough-conversion fixes; rerun the mock benchmark for a commit-pinned record."
   }
 }

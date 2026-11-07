@@ -351,10 +351,12 @@ def verify_lifecycle_cleanup(adapter: SandboxAdapter, base_url: str) -> dict[str
     return checks
 
 
-def find_ffmpeg() -> str | None:
+def ffmpeg_candidates() -> list[str]:
+    """Return ffmpeg binaries to probe, preferring one on PATH."""
+    candidates: list[str] = []
     found = shutil.which("ffmpeg")
     if found:
-        return found
+        candidates.append(found)
     roots = [
         Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")) if os.environ.get("PLAYWRIGHT_BROWSERS_PATH") else None,
         Path.home() / "AppData" / "Local" / "ms-playwright",
@@ -363,9 +365,74 @@ def find_ffmpeg() -> str | None:
     for root in roots:
         if root is None or not root.exists():
             continue
-        for candidate in root.glob("ffmpeg-*/ffmpeg*"):
-            if candidate.is_file() and candidate.suffix.lower() in {".exe", ""}:
-                return str(candidate)
+        matches = sorted(
+            root.glob("ffmpeg-*/ffmpeg*"),
+            key=lambda path: path.parent.name,
+            reverse=True,
+        )
+        for candidate in matches:
+            if (
+                candidate.is_file()
+                and candidate.suffix.lower() in {".exe", ""}
+                and str(candidate) not in candidates
+            ):
+                candidates.append(str(candidate))
+    return candidates
+
+
+def _ffmpeg_listing(ffmpeg: str, flag: str) -> str:
+    try:
+        proc = subprocess.run(
+            [ffmpeg, "-hide_banner", flag],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return proc.stdout + proc.stderr
+
+
+def _ffmpeg_encoders(ffmpeg: str) -> set[str]:
+    encoders: set[str] = set()
+    for line in _ffmpeg_listing(ffmpeg, "-encoders").splitlines():
+        parts = line.split()
+        # Encoder rows start with a six-character capability flag such as V....D.
+        if len(parts) >= 2 and len(parts[0]) == 6 and parts[0][0] in "VAS":
+            encoders.add(parts[1])
+    return encoders
+
+
+def _ffmpeg_muxers(ffmpeg: str) -> set[str]:
+    muxers: set[str] = set()
+    for line in _ffmpeg_listing(ffmpeg, "-muxers").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in {"E", "D"}:
+            muxers.add(parts[1])
+    return muxers
+
+
+def ffmpeg_encoder(ffmpeg: str) -> str | None:
+    """Return a usable MP4 video encoder, or None for a VP9-only build."""
+    if "mp4" not in _ffmpeg_muxers(ffmpeg):
+        return None
+    encoders = _ffmpeg_encoders(ffmpeg)
+    for encoder in ("libx264", "mpeg4"):
+        if encoder in encoders:
+            return encoder
+    return None
+
+
+def find_ffmpeg() -> str | None:
+    """Return the first ffmpeg that can actually produce an MP4.
+
+    Playwright ships a minimal VP9/WebM-only ffmpeg for its own recording
+    pipeline. Selecting it merely because it exists produced a false
+    ``mp4_created`` failure on CI, so probe for a real MP4 encoder instead.
+    """
+    for candidate in ffmpeg_candidates():
+        if ffmpeg_encoder(candidate):
+            return candidate
     return None
 
 
@@ -377,6 +444,33 @@ def newest_video() -> Path | None:
     return videos[0] if videos else None
 
 
+def _ffmpeg_command(
+    ffmpeg: str, video: Path, encoder: str, *, preset: bool
+) -> list[str]:
+    command = [
+        ffmpeg,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(video),
+        "-c:v",
+        encoder,
+    ]
+    if preset and encoder == "libx264":
+        command.extend(["-preset", "medium"])
+    command.extend(
+        [
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(DEMO_PATH),
+        ]
+    )
+    return command
+
+
 def convert_walkthrough() -> dict[str, Any]:
     video = newest_video()
     result: dict[str, Any] = {"video_recorded": bool(video)}
@@ -384,42 +478,59 @@ def convert_walkthrough() -> dict[str, Any]:
         result["mp4_created"] = False
         result["reason"] = "Playwright did not produce a recording"
         return result
+    source_video = str(video.relative_to(PROJECT_ROOT)).replace("\\", "/")
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
         result["mp4_created"] = False
-        result["source_video"] = str(video.relative_to(PROJECT_ROOT)).replace("\\", "/")
-        result["reason"] = "ffmpeg not found; source webm retained"
+        result["source_video"] = source_video
+        result["reason"] = (
+            "no ffmpeg build with an H.264/MPEG-4 MP4 encoder was found; "
+            "source webm retained"
+        )
         return result
+    encoder = ffmpeg_encoder(ffmpeg)
+    if encoder is None:  # pragma: no cover - find_ffmpeg already checked
+        raise RuntimeError("selected ffmpeg cannot encode MP4")
     DEMO_PATH.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-loglevel",
-            "error",
-            "-i",
-            str(video),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            str(DEMO_PATH),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+
+    attempts = [_ffmpeg_command(ffmpeg, video, encoder, preset=True)]
+    if encoder == "libx264":
+        # Some minimal builds expose libx264 without the preset AVOption.
+        attempts.append(_ffmpeg_command(ffmpeg, video, encoder, preset=False))
+
+    errors: list[str] = []
+    for command in attempts:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if (
+            proc.returncode == 0
+            and DEMO_PATH.is_file()
+            and DEMO_PATH.stat().st_size > 0
+        ):
+            result.update(
+                {
+                    "mp4_created": True,
+                    "source_video": source_video,
+                    "ffmpeg_error": proc.stderr[-1000:],
+                    "mp4_sha256": sha256(DEMO_PATH),
+                    "mp4_bytes": DEMO_PATH.stat().st_size,
+                }
+            )
+            return result
+        errors.append(proc.stderr[-1000:])
+        DEMO_PATH.unlink(missing_ok=True)
+
     result.update(
         {
-            "mp4_created": proc.returncode == 0 and DEMO_PATH.exists(),
-            "source_video": str(video.relative_to(PROJECT_ROOT)).replace("\\", "/"),
-            "ffmpeg_error": proc.stderr[-1000:],
-            "mp4_sha256": sha256(DEMO_PATH) if DEMO_PATH.exists() else None,
-            "mp4_bytes": DEMO_PATH.stat().st_size if DEMO_PATH.exists() else 0,
+            "mp4_created": False,
+            "source_video": source_video,
+            "ffmpeg_error": "\n".join(errors)[-1000:],
+            "mp4_sha256": None,
+            "mp4_bytes": 0,
         }
     )
     return result
