@@ -1,14 +1,21 @@
 {
-  "generated_at": "2026-11-06T20:09:07.184823+00:00",
+  "generated_at": "2026-11-07T13:18:58.870587+00:00",
   "purpose": "Canonical index for live evidence. Only the current entry is presented as verification; historical failures and quarantined stale failures are kept for audit.",
   "current": {
-    "path": "reports/live-evidence/live-visible-guest-2026-11-05.json",
+    "path": "reports/live-evidence/live-visible-guest-2026-11-07.json",
     "status": "verified",
     "live_guest_browser_verified": true,
     "live_celesto_cdp_verified": false,
-    "note": "Single-sandbox live workflow, not the 20-run benchmark. The platform CDP gateway returned HTTP 501, so the verified browser path is the in-guest Playwright browser on the sandbox desktop."
+    "note": "Single-sandbox live workflow at commit 8aed25e, not the 20-run benchmark. The platform CDP gateway returned HTTP 501 on Micro, so the verified browser path is the in-guest Playwright browser."
   },
   "historical": [
+    {
+      "path": "reports/live-evidence/live-visible-guest-2026-11-05.json",
+      "status": "verified",
+      "live_guest_browser_verified": true,
+      "live_celesto_cdp_verified": false,
+      "note": "Previous verified single-sandbox run, superseded as current by the 2026-11-07 run."
+    },
     {
       "path": "reports/live-evidence/live-cdp-501.json",
       "status": "historical_failure",

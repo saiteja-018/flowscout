@@ -177,10 +177,11 @@ requires a real `CELESTO_API_KEY`; otherwise `create_adapter("live")` raises
 servers were verified against real Celesto sandboxes from this repository. On
 the free Micro trial, `POST .../browser` returns HTTP 501 (indexed as a
 historical failure in `reports/live-evidence/index.json`), so live browser work
-falls back to the guest's Playwright over exec. A single-sandbox run on
-2026-11-05 verified that fallback with a headed Chromium on display `:99`; the
-CDP gateway on a paid `standard` size is expected to work but is not yet
-verified from this repository. `live_celesto_verified` in
+falls back to the guest's Playwright over exec. Single-sandbox runs on
+2026-11-05 and 2026-11-07 verified that fallback; the 2026-11-05 run used a
+headed Chromium on display `:99`, and the 2026-11-07 run is the current live
+record. The CDP gateway on a paid `standard` size is expected to work but is
+not yet verified from this repository. `live_celesto_verified` in
 `reports/reliability.json` reflects the evaluation mode; the separate
 `reports/live-evidence/` index distinguishes current verification, historical
 attempts, and quarantined stale failures. The stale free-trial 429 records are
@@ -253,10 +254,13 @@ are infrastructure time, not agent work. Cost fields name their basis:
 clock, and `cost_source`/`rate_usd_per_hour` state whether the row is
 `mock_zero_cost` or a live Celesto size rate.
 
-A separate single-sandbox live check on 2026-11-05 verified the visible
-guest-Chromium fallback on Micro (`Chrome/151.0.7922.34`, display `:99`) and
-confirmed the same SAVE20 stacking defect. It is not a 20-run benchmark; the
-record is `reports/live-evidence/live-visible-guest-2026-11-05.json`.
+Separate single-sandbox live checks on 2026-11-05 and 2026-11-07 verified the
+visible guest-Chromium fallback on Micro and confirmed the same SAVE20 stacking
+defect. The 2026-11-05 run recorded `Chrome/151.0.7922.34` on display `:99`;
+the 2026-11-07 run completed in 102.39 s with a 4.39 s boot, 24.41 s in-guest
+deploy, 52.39 s workflow, and confirmed cleanup. Neither is a 20-run benchmark;
+the current record is
+`reports/live-evidence/live-visible-guest-2026-11-07.json`.
 
 The four-case generated-test matrix is the important correctness result:
 
@@ -297,8 +301,9 @@ cross-checks `evaluation_mode`, `live_celesto_verified`, and the browser/cost
 claims against the actual run rows.
 
 `reports/live-evidence/index.json` is the canonical live-evidence index. Its
-`current` entry is the single-sandbox 2026-11-05 visible guest-browser run; the
-CDP 501 attempt and retained-sandbox record are historical; the stale
+`current` entry is the single-sandbox 2026-11-07 visible guest-browser run; the
+2026-11-05 run, the CDP 501 attempt, and the retained-sandbox record are
+historical; the stale
 free-trial 429 artifacts are quarantined under
 `reports/live-evidence/quarantine/`. Quarantined records are retained for audit
 but are never presented as current verification.
@@ -558,15 +563,15 @@ Key evidence:
 - `reports/evidence/test-matrix.json` - four-case generated test proof.
 - `reports/evidence/runtime-manifest.json` - source hashes and runtime boundary.
 - `reports/live-evidence/index.json` - current, historical, and quarantined live
-  evidence; the 2026-11-05 single-sandbox visible guest-browser run is current.
+  evidence; the 2026-11-07 single-sandbox visible guest-browser run is current.
 
 ## Tradeoffs and limitations
 
 - **The recorded evaluation in this snapshot is mock.** `reports/reliability.json`
   records `evaluation_mode` explicitly; the live run replaces those numbers with
   real boot, wall-clock, and cost figures. Live probes (real boot timing, the
-  CDP 501, trial 429s, and the 2026-11-05 visible guest-browser run) are
-  preserved under `reports/live-evidence/` and classified by
+  CDP 501, trial 429s, and the 2026-11-05/2026-11-07 visible guest-browser
+  runs) are preserved under `reports/live-evidence/` and classified by
   `reports/live-evidence/index.json`; stale 429 records are quarantined.
 - **The planner is bounded.** The LLM chooses among validated candidates at
   fixed decision points rather than free-form browsing. This keeps untrusted

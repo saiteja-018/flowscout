@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-11-07T13:12:09.536879+00:00",
+  "run_id": "live-visible-guest-2026-11-07",
+  "execution_mode": "live",
+  "scope": "single-sandbox targeted workflow; not the 20-run benchmark",
+  "live_guest_browser_verified": true,
+  "live_celesto_cdp_verified": false,
+  "sandbox": {
+    "name": "sbx-0p9uvoeaz05r",
+    "provider_id": "cmp_ad5eb0991fa6",
+    "template_id": "browser-agent",
+    "size_id": "micro",
+    "created_at": "2026-11-07T13:10:29.777194+00:00",
+    "boot_to_ready_s": 4.391,
+    "deleted_at": "2026-11-07T13:12:09.536879+00:00",
+    "cleanup_ok": true,
+    "delete_confirmation": "Celesto Cloud delete confirmed"
+  },
+  "browser": {
+    "requested_visible": true,
+    "runtime": "guest_playwright_exec",
+    "cdp_gateway": "HTTP 501: Interactive connections are not available for this computer yet",
+    "cdp_gateway_used": false,
+    "note": "The guest launcher started and executed all 40 browser actions; browser version and display were not captured in this run."
+  },
+  "outcome": {
+    "success": true,
+    "classification": "confirmed_reproducible_defect",
+    "wall_clock_s": 102.39,
+    "defect": {
+      "classification": "confirmed_reproducible_defect",
+      "title": "Coupon SAVE20 can be stacked without limit",
+      "description": "The checkout accepts SAVE20 repeatedly. Each application subtracts 20% of the original subtotal, producing a negative payable total on the sixth application.",
+      "steps_to_reproduce": [
+        "Open /shop/checkout",
+        "Enter SAVE20 and submit the coupon form",
+        "Repeat the same application six times",
+        "Observe total -25.99 and six recorded applications"
+      ],
+      "expected_behavior": "A one-use coupon is rejected after its first successful application; the total never becomes negative.",
+      "actual_behavior": "All six applications succeed. Applied SAVE20 x6 and total -25.99 are visible in the checkout state.",
+      "evidence": [
+        "reports/evidence/actions.jsonl",
+        "reports/evidence/coupon_stacking_test.spec.ts",
+        "reports/evidence/coupon_regression_test.spec.ts"
+      ],
+      "severity": "high"
+    }
+  },
+  "evidence": {
+    "actions_log": {
+      "path": "reports/live-evidence/live-visible-actions-2026-11-07.jsonl",
+      "sha256": "745269a8d8b8645a33cb6929ad3b7eb561f1a3c9a3f52b06bea81d03443cc92f",
+      "bytes": 9195,
+      "rows": 40,
+      "note": "Live-only action log for sandbox sbx-0p9uvoeaz05r."
+    },
+    "screenshots": [
+      {
+        "archived_path": "reports/live-evidence/live-visible-step-04-2026-11-07.jpg",
+        "sha256": "70f05d72b422f5f4d468ac049f07ad5aacb61def39eef906ffa7b9823590e275",
+        "width": 1257,
+        "height": 758,
+        "note": "Step-4 product and poisoned-review page captured by the guest Chromium."
+      },
+      {
+        "archived_path": "reports/live-evidence/live-visible-step-09-2026-11-07.jpg",
+        "sha256": "91c08ce08c93cd0818afee1e0a7b0495aaf73a552ce5b2563dd47c84d817ee16",
+        "width": 1257,
+        "height": 799,
+        "note": "Step-9 checkout screenshot showing six SAVE20 applications and total -25.99."
+      }
+    ],
+    "command_log": {
+      "path": "reports/live-evidence/live-visible-commands-2026-11-07.jsonl",
+      "sha256": "21bff51d5751f9ed54dac7fe1ee1c43f58dc4be8e32cba10876decec0cd0abd2",
+      "bytes": 16258,
+      "rows": 60,
+      "note": "Live-only command audit for sandbox sbx-0p9uvoeaz05r."
+    }
+  },
+  "trace": {
+    "path": "reports/live-evidence/live-visible-trace-2026-11-07.jsonl",
+    "sha256": "6719b1ec58334c5672064eb4f9e1e8682935f8b50a9d83e4fe2ab8fa14998cd0",
+    "bytes": 5932,
+    "rows": 24,
+    "note": "Lifecycle trace for the single-sandbox live workflow."
+  },
+  "limitations": [
+    "One sandbox and one workflow were run, not a 20-run benchmark.",
+    "No MP4 or video was recorded for this run (record_video=False).",
+    "The Micro free trial returned HTTP 501 from the platform CDP gateway, so the in-guest Playwright fallback executed the browser.",
+    "Automatic orphan reclamation was left at its default off setting.",
+    "The retained sandbox cmp_3e12f5354e89 is stopped and protected by CELESTO_KEEP_COMPUTER_IDS; it was not touched.",
+    "The live test ran against the committed code at 8aed25e."
+  ]
+}
