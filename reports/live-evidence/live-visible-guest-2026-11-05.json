@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "generated_at": "2026-11-05T12:10:53.682997+00:00",
   "run_id": "live-visible-guest-2026-11-05",
   "execution_mode": "live",
@@ -85,5 +86,13 @@
     "reclaim_orphans() was disabled for this interactive test to avoid deleting unrelated cloud computers.",
     "The shared reports/evidence/actions.jsonl was rewritten by earlier live runs; this record uses an archived 40-row live extract instead.",
     "Leftover live screenshots were moved out of reports/evidence into reports/live-evidence/quarantine before the mock benchmark was regenerated."
-  ]
+  ],
+  "provenance": {
+    "git_commit": null,
+    "git_branch": null,
+    "git_dirty": null,
+    "git_untracked_count": null,
+    "captured_at": "2026-11-05T12:10:53.682997+00:00",
+    "note": "The 2026-11-05 run predates provenance capture; the git commit was not recorded. Provenance added during the schema migration."
+  }
 }

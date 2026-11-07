@@ -20,8 +20,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+SCHEMA_VERSION = 1
 SANDBOX_NAME_RE = re.compile(r"^sbx-[a-z0-9]{8,}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
 LIVE_BROWSER_RUNTIMES = {"celesto_cdp", "guest_playwright_exec", "sandbox_playwright"}
 
 CLASSIFICATIONS = Literal[
@@ -75,6 +77,7 @@ REQUIRED_SOURCE_FILES = {
     "app/ownership.py",
     "app/evidence_io.py",
     "app/report_schemas.py",
+    "app/provenance.py",
     "app/guest_browser_launcher.py",
     "app/guest_browser_worker.py",
     "app/guest_healthcheck.py",
@@ -82,12 +85,44 @@ REQUIRED_SOURCE_FILES = {
     "app/target_saas_app.py",
     "playwright.config.ts",
     "scripts/run_live_demo.py",
+    "scripts/run_live_single.py",
+    "scripts/live_common.py",
     "scripts/verify_submission.py",
 }
 
 
 class _Schema(BaseModel):
     model_config = ConfigDict(extra="allow")
+
+
+class _VersionedSchema(_Schema):
+    """Base for top-level documents that must state the evidence schema version."""
+
+    schema_version: int = Field(default=SCHEMA_VERSION, ge=1)
+
+
+class Provenance(_Schema):
+    """Git state captured before a run writes any artifacts."""
+
+    git_commit: str | None = None
+    git_branch: str | None = None
+    git_dirty: bool | None = None
+    git_untracked_count: int | None = Field(default=None, ge=0)
+    captured_at: str = Field(min_length=1)
+    note: str = ""
+
+    @field_validator("git_commit")
+    @classmethod
+    def valid_commit(cls, value: str | None) -> str | None:
+        if value is not None and not GIT_COMMIT_RE.match(value):
+            raise ValueError("git_commit must be a lowercase hex commit id")
+        return value
+
+    @model_validator(mode="after")
+    def explain_unknown_commit(self) -> "Provenance":
+        if self.git_commit is None and not self.note.strip():
+            raise ValueError("provenance with an unknown commit must explain why in note")
+        return self
 
 
 def _unique(values: list[str], label: str) -> None:
@@ -111,7 +146,7 @@ def _p90(values: list[float]) -> float:
     return round(ordered[rank - 1], 3)
 
 
-class ProblemReport(_Schema):
+class ProblemReport(_VersionedSchema):
     who: str = Field(min_length=40)
     agent_work: str = Field(min_length=40)
     proof_output: str = Field(min_length=20)
@@ -124,7 +159,7 @@ class Capability(_Schema):
     evidence_path: str = Field(min_length=1)
 
 
-class CapabilitiesReport(_Schema):
+class CapabilitiesReport(_VersionedSchema):
     execution_mode: Literal["mock", "live"]
     live_celesto_verified: bool
     capabilities: list[Capability] = Field(min_length=2)
@@ -137,7 +172,7 @@ class CapabilitiesReport(_Schema):
         return self
 
 
-class LifecycleReport(_Schema):
+class LifecycleReport(_VersionedSchema):
     cleanup_on_success: bool
     cleanup_on_failure: bool
     cleanup_on_interrupt: bool
@@ -329,7 +364,7 @@ class RunRecord(_Schema):
         return self
 
 
-class ReliabilityReport(_Schema):
+class ReliabilityReport(_VersionedSchema):
     runs: list[RunRecord] = Field(min_length=1)
     run_count: int = Field(ge=1)
     success_rate: float = Field(ge=0, le=1)
@@ -442,7 +477,7 @@ class ReliabilityReport(_Schema):
         return self
 
 
-class ContainmentReport(_Schema):
+class ContainmentReport(_VersionedSchema):
     attack: Literal["prompt_injection_exfil", "destructive_command", "suspicious_package"]
     blocked: bool
     host_untouched: bool
@@ -481,7 +516,7 @@ class ContainmentReport(_Schema):
         return self
 
 
-class FailurePolicyReport(_Schema):
+class FailurePolicyReport(_VersionedSchema):
     failed_step: int = Field(ge=1)
     total_steps: int = Field(ge=1)
     policy: POLICIES
@@ -519,7 +554,7 @@ class ConcurrencyJob(_Schema):
         return value
 
 
-class ConcurrencyReport(_Schema):
+class ConcurrencyReport(_VersionedSchema):
     jobs: list[ConcurrencyJob] = Field(min_length=5)
     mode: Literal["sequential"]
     parallelism: Literal[1]
@@ -531,7 +566,7 @@ class ConcurrencyReport(_Schema):
         return self
 
 
-class WorkflowReport(_Schema):
+class WorkflowReport(_VersionedSchema):
     primary: WorkflowOutcomeSchema
     containment: ContainmentReport
     host_test_matrix_path: str = Field(min_length=1)
@@ -544,7 +579,7 @@ class WorkflowReport(_Schema):
         return self
 
 
-class RuntimeManifest(_Schema):
+class RuntimeManifest(_VersionedSchema):
     generated_at: str = Field(min_length=1)
     execution_mode: Literal["mock", "live"]
     target_url: str = Field(min_length=1)
@@ -559,6 +594,7 @@ class RuntimeManifest(_Schema):
     npx_playwright: str = Field(min_length=1)
     node_playwright_specs: str = Field(min_length=1)
     source_files: dict[str, str] = Field(min_length=1)
+    provenance: Provenance | None = None
 
     @field_validator("source_files")
     @classmethod
@@ -578,16 +614,20 @@ class LiveEvidenceEntry(_Schema):
     live_guest_browser_verified: bool | None = None
 
 
-class LiveEvidenceIndex(_Schema):
+class LiveEvidenceIndex(_VersionedSchema):
     generated_at: str = Field(min_length=1)
     current: LiveEvidenceEntry
+    recovery: LiveEvidenceEntry | None = None
     historical: list[LiveEvidenceEntry] = Field(default_factory=list)
     quarantined: list[LiveEvidenceEntry] = Field(default_factory=list)
+    provenance: Provenance | None = None
 
     @model_validator(mode="after")
     def check_current(self) -> "LiveEvidenceIndex":
         if self.current.status != "verified":
             raise ValueError("the current live evidence entry must be verified")
+        if self.recovery is not None and self.recovery.status != "verified":
+            raise ValueError("the recovery live evidence entry must be verified")
         return self
 
 
@@ -653,7 +693,7 @@ class LiveEvidenceBundle(_Schema):
     command_log: LiveEvidenceFile
 
 
-class LiveVisibleRecord(_Schema):
+class LiveVisibleRecord(_VersionedSchema):
     generated_at: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
     execution_mode: Literal["live"]
@@ -664,6 +704,8 @@ class LiveVisibleRecord(_Schema):
     browser: dict[str, Any]
     outcome: LiveOutcomeSummary
     evidence: LiveEvidenceBundle
+    trace: LiveEvidenceFile | None = None
+    provenance: Provenance | None = None
     limitations: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -678,6 +720,68 @@ class LiveVisibleRecord(_Schema):
             runtime = str(self.browser.get("runtime", ""))
             if runtime != "guest_playwright_exec":
                 raise ValueError("guest verification requires the guest Playwright runtime")
+        return self
+
+
+class LiveRecoveryFailure(_Schema):
+    step: int = Field(ge=1)
+    http_status: Literal[503]
+    message: str = Field(min_length=1)
+    defect_claim: bool = False
+
+    @model_validator(mode="after")
+    def no_defect_claim(self) -> "LiveRecoveryFailure":
+        if self.defect_claim:
+            raise ValueError("a controlled infrastructure failure must not claim a defect")
+        return self
+
+
+class LiveRecoveryEvent(_Schema):
+    ts: str = Field(min_length=1)
+    event: str = Field(min_length=1)
+    state: str = Field(min_length=1)
+    detail: str = ""
+
+
+class LiveRecoveryRetry(_Schema):
+    success: bool
+    classification: CLASSIFICATIONS
+    wall_clock_s: float = Field(ge=0)
+
+
+class LiveRecoveryRecord(_VersionedSchema):
+    generated_at: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    execution_mode: Literal["live"]
+    scope: str = Field(min_length=20)
+    recovery_policy: Literal["fresh"]
+    failure: LiveRecoveryFailure
+    failed_sandbox: LiveSandboxSummary
+    replacement_sandbox: LiveSandboxSummary
+    retry: LiveRecoveryRetry
+    events: list[LiveRecoveryEvent] = Field(min_length=4)
+    browser: dict[str, Any]
+    evidence: LiveEvidenceBundle
+    trace: LiveEvidenceFile
+    provenance: Provenance | None = None
+    limitations: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def check_recovery(self) -> "LiveRecoveryRecord":
+        if self.failed_sandbox.name == self.replacement_sandbox.name:
+            raise ValueError("failed and replacement sandboxes must differ")
+        if not self.failed_sandbox.cleanup_ok:
+            raise ValueError("recovery record must confirm cleanup of the failed sandbox")
+        if not self.replacement_sandbox.cleanup_ok:
+            raise ValueError("recovery record must confirm cleanup of the replacement sandbox")
+        if not self.retry.success:
+            raise ValueError("recovery record must record a successful retry")
+        if self.retry.classification != "confirmed_reproducible_defect":
+            raise ValueError("recovery retry must reproduce the defect")
+        event_names = {event.event for event in self.events}
+        for required in ("failure", "policy_applied", "sandbox_recreated", "step_complete"):
+            if required not in event_names:
+                raise ValueError(f"recovery events must include {required!r}")
         return self
 
 
@@ -739,6 +843,40 @@ def _read_jsonl(path: Path, label: str, errors: list[str]) -> list[dict[str, Any
             continue
         rows.append(value)
     return rows
+
+
+def _require_schema_version(payload: Any, label: str, errors: list[str]) -> None:
+    if not isinstance(payload, dict):
+        return
+    value = payload.get("schema_version")
+    if value != SCHEMA_VERSION:
+        errors.append(f"{label}: schema_version must be {SCHEMA_VERSION}, found {value!r}")
+
+
+def _check_provenance(
+    payload: Any,
+    label: str,
+    errors: list[str],
+    *,
+    require_commit: bool = False,
+    require_clean: bool = False,
+) -> Provenance | None:
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("provenance")
+    if raw is None:
+        errors.append(f"{label}: missing provenance")
+        return None
+    try:
+        provenance = Provenance.model_validate(raw)
+    except ValidationError as exc:
+        errors.extend(_format_validation(f"{label} provenance", exc))
+        return None
+    if require_commit and provenance.git_commit is None:
+        errors.append(f"{label}: provenance must pin a git commit")
+    if require_clean and provenance.git_dirty is not False:
+        errors.append(f"{label}: provenance must record git_dirty=false")
+    return provenance
 
 
 def _sha256(path: Path) -> str:
@@ -1031,6 +1169,8 @@ def _check_live_evidence(
         errors.extend(_format_validation("live evidence index", exc))
         return
     checked.append("reports/live-evidence/index.json")
+    _require_schema_version(payload, "live evidence index", errors)
+    _check_provenance(payload, "live evidence index", errors)
 
     current_path = root / index.current.path
     if not current_path.is_file():
@@ -1038,12 +1178,26 @@ def _check_live_evidence(
     else:
         current_payload = _read_json(current_path, "current live evidence", errors)
         if isinstance(current_payload, dict):
+            _require_schema_version(current_payload, "current live evidence", errors)
+            _check_provenance(
+                current_payload,
+                "current live evidence",
+                errors,
+                require_commit=True,
+                require_clean=True,
+            )
             try:
                 record = LiveVisibleRecord.model_validate(current_payload)
             except ValidationError as exc:
                 errors.extend(_format_validation("current live evidence", exc))
             else:
                 _check_live_record_files(root, record, errors, checked)
+                if record.trace is None:
+                    errors.append("live evidence: current record must include a trace")
+                else:
+                    _check_live_trace(
+                        root, record.trace, "current live evidence", errors, checked
+                    )
                 if not (
                     index.current.live_guest_browser_verified
                     or index.current.live_celesto_cdp_verified
@@ -1064,6 +1218,35 @@ def _check_live_evidence(
                     errors.append("live evidence: index CDP flag disagrees with the record")
         checked.append(index.current.path)
 
+    if index.recovery is not None:
+        recovery_path = root / index.recovery.path
+        if not recovery_path.is_file():
+            errors.append(
+                f"live evidence: recovery record is missing: {index.recovery.path}"
+            )
+        else:
+            recovery_payload = _read_json(
+                recovery_path, "recovery live evidence", errors
+            )
+            if isinstance(recovery_payload, dict):
+                _require_schema_version(
+                    recovery_payload, "recovery live evidence", errors
+                )
+                _check_provenance(
+                    recovery_payload,
+                    "recovery live evidence",
+                    errors,
+                    require_commit=True,
+                    require_clean=True,
+                )
+                try:
+                    recovery = LiveRecoveryRecord.model_validate(recovery_payload)
+                except ValidationError as exc:
+                    errors.extend(_format_validation("recovery live evidence", exc))
+                else:
+                    _check_recovery_record(root, recovery, errors, checked)
+            checked.append(index.recovery.path)
+
     for entry in [*index.historical, *index.quarantined]:
         path = root / entry.path
         if not path.is_file():
@@ -1071,10 +1254,31 @@ def _check_live_evidence(
             continue
         if path.suffix.lower() == ".json":
             value = _read_json(path, f"live evidence {entry.path}", errors)
-            if isinstance(value, dict) and value.get("live_celesto_verified") is True:
-                errors.append(
-                    f"live evidence: {entry.path} is indexed as {entry.status} but claims verification"
-                )
+            if isinstance(value, dict):
+                if value.get("live_celesto_verified") is True:
+                    errors.append(
+                        f"live evidence: {entry.path} is indexed as {entry.status} but claims verification"
+                    )
+                if "run_id" in value and "sandbox" in value:
+                    try:
+                        historical = LiveVisibleRecord.model_validate(value)
+                    except ValidationError as exc:
+                        errors.extend(
+                            _format_validation(f"live evidence {entry.path}", exc)
+                        )
+                    else:
+                        _require_schema_version(
+                            value, f"live evidence {entry.path}", errors
+                        )
+                        _check_provenance(value, f"live evidence {entry.path}", errors)
+                        _check_live_record_files(root, historical, errors, checked)
+                        _check_live_trace(
+                            root,
+                            historical.trace,
+                            f"live evidence {entry.path}",
+                            errors,
+                            checked,
+                        )
         checked.append(entry.path)
 
     for stale in ("live-smoke-429.json", "live-smoke-429-1802.json"):
@@ -1091,7 +1295,7 @@ def _check_live_evidence(
 
 def _check_live_record_files(
     root: Path,
-    record: LiveVisibleRecord,
+    record: LiveVisibleRecord | LiveRecoveryRecord,
     errors: list[str],
     checked: list[str],
 ) -> None:
@@ -1119,6 +1323,96 @@ def _check_live_record_files(
         if _sha256(path) != shot.sha256:
             errors.append(f"live evidence: screenshot hash does not match {shot.archived_path}")
         checked.append(shot.archived_path)
+
+
+def _check_live_trace(
+    root: Path,
+    trace: LiveEvidenceFile | None,
+    label: str,
+    errors: list[str],
+    checked: list[str],
+) -> list[dict[str, Any]]:
+    if trace is None:
+        return []
+    path = root / trace.path
+    if not path.is_file():
+        errors.append(f"{label}: missing trace: {trace.path}")
+        return []
+    if path.stat().st_size != trace.bytes:
+        errors.append(f"{label}: trace byte count does not match")
+    if _sha256(path) != trace.sha256:
+        errors.append(f"{label}: trace hash does not match")
+    rows = _read_jsonl(path, f"{label} trace", errors)
+    if len(rows) != trace.rows:
+        errors.append(f"{label}: trace row count does not match")
+    checked.append(trace.path)
+    return rows
+
+
+def _check_recovery_record(
+    root: Path,
+    record: LiveRecoveryRecord,
+    errors: list[str],
+    checked: list[str],
+) -> None:
+    if record.failure.step != 7:
+        errors.append("live recovery: controlled failure must be at step 7")
+    if record.failure.http_status != 503:
+        errors.append("live recovery: controlled failure must be HTTP 503")
+    if record.failure.defect_claim:
+        errors.append("live recovery: infrastructure failure must not claim a defect")
+    if record.recovery_policy != "fresh":
+        errors.append("live recovery: policy must be fresh")
+    if not record.failed_sandbox.cleanup_ok:
+        errors.append("live recovery: failed sandbox cleanup is not confirmed")
+    if not record.replacement_sandbox.cleanup_ok:
+        errors.append("live recovery: replacement sandbox cleanup is not confirmed")
+    if record.failed_sandbox.name == record.replacement_sandbox.name:
+        errors.append("live recovery: failed and replacement sandboxes must differ")
+    if not record.retry.success:
+        errors.append("live recovery: retry must succeed")
+    if record.retry.classification != "confirmed_reproducible_defect":
+        errors.append("live recovery: retry must reproduce the defect")
+
+    events = {event.event: event for event in record.events}
+    for required in ("failure", "policy_applied", "sandbox_recreated", "step_complete"):
+        if required not in events:
+            errors.append(f"live recovery: missing event {required}")
+    failure = events.get("failure")
+    if failure is not None:
+        if failure.state != "MidTaskFailure":
+            errors.append("live recovery: failure event must be MidTaskFailure")
+        if "503" not in failure.detail:
+            errors.append("live recovery: failure event must mention HTTP 503")
+    policy = events.get("policy_applied")
+    if policy is not None and "policy=fresh" not in policy.detail:
+        errors.append("live recovery: policy event must state policy=fresh")
+    recreated = events.get("sandbox_recreated")
+    if recreated is not None and record.replacement_sandbox.name not in recreated.detail:
+        errors.append("live recovery: sandbox_recreated event must name the replacement")
+
+    _check_live_record_files(root, record, errors, checked)
+    trace_rows = _check_live_trace(root, record.trace, "live recovery", errors, checked)
+    trace_events = {str(row.get("event")) for row in trace_rows}
+    for required in ("failure", "policy_applied", "sandbox_recreated", "step_complete"):
+        if required not in trace_events:
+            errors.append(f"live recovery: trace is missing {required}")
+
+    command_path = root / record.evidence.command_log.path
+    if command_path.is_file():
+        command_rows = _read_jsonl(command_path, "live recovery command log", errors)
+        names = {str(row.get("sandbox_name")) for row in command_rows}
+        delete_names = {
+            str(row.get("sandbox_name"))
+            for row in command_rows
+            if str(row.get("command", "")).startswith("delete sandbox")
+        }
+        for sandbox in (record.failed_sandbox.name, record.replacement_sandbox.name):
+            if sandbox not in names:
+                errors.append(f"live recovery: command log does not mention {sandbox}")
+            if sandbox not in delete_names:
+                errors.append(f"live recovery: command log has no delete for {sandbox}")
+
 
 
 def verify_submission(root: Path | str) -> VerificationResult:
@@ -1151,6 +1445,7 @@ def verify_submission(root: Path | str) -> VerificationResult:
         payload = _read_json(path, f"report {name}", errors)
         if payload is None:
             continue
+        _require_schema_version(payload, f"report {name}", errors)
         try:
             loaded[name] = model.model_validate(payload)
         except ValidationError as exc:
@@ -1165,6 +1460,8 @@ def verify_submission(root: Path | str) -> VerificationResult:
     else:
         payload = _read_json(manifest_path, "runtime manifest", errors)
         if isinstance(payload, dict):
+            _require_schema_version(payload, "runtime manifest", errors)
+            _check_provenance(payload, "runtime manifest", errors)
             try:
                 manifest = RuntimeManifest.model_validate(payload)
             except ValidationError as exc:

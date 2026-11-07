@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "who": "FlowScout is a browser QA agent for teams that need reproducible evidence of checkout defects. It explores a deterministic SaaS fixture, documents the defect, generates regression tests, and reports its own containment and cleanup behavior.",
   "agent_work": "The agent creates a logical sandbox, verifies readiness, explores the storefront and untrusted reviews, exercises checkout, applies SAVE20 six times, observes a negative total, writes a reproduction spec and a regression spec, and records a step-7 HTTP 503 failure with a fresh recovery. Browser actions are structured; the page can never supply executable code.",
   "proof_output": "Evidence includes logs/commands.jsonl, reports/failure_trace.jsonl, reports/evidence/actions.jsonl, Playwright screenshots and video, generated reproduction/regression specs, a four-case host test matrix, independent containment canary hashes, and 20 measured mock-mode runs.",

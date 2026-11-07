@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "generated_at": "2026-11-07T13:18:58.870587+00:00",
   "purpose": "Canonical index for live evidence. Only the current entry is presented as verification; historical failures and quarantined stale failures are kept for audit.",
   "current": {
@@ -61,5 +62,13 @@
       "status": "quarantined",
       "note": "Old containment canary from a prior live run; retained for audit only."
     }
-  ]
+  ],
+  "provenance": {
+    "git_commit": "8aed25e",
+    "git_branch": "main",
+    "git_dirty": null,
+    "git_untracked_count": null,
+    "captured_at": "2026-11-07T13:18:58.870587+00:00",
+    "note": "Index provenance reconstructed during the schema migration: the indexed run used commit 8aed25e on a clean tracked tree; the index was committed with the evidence at a7d476f."
+  }
 }

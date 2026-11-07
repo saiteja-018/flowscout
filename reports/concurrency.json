@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "jobs": [
     {
       "job_id": "job-001",

@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "generated_at": "2026-11-07T13:12:09.536879+00:00",
   "run_id": "live-visible-guest-2026-11-07",
   "execution_mode": "live",
@@ -93,5 +94,13 @@
     "Automatic orphan reclamation was left at its default off setting.",
     "The retained sandbox cmp_3e12f5354e89 is stopped and protected by CELESTO_KEEP_COMPUTER_IDS; it was not touched.",
     "The live test ran against the committed code at 8aed25e."
-  ]
+  ],
+  "provenance": {
+    "git_commit": "8aed25e",
+    "git_branch": "main",
+    "git_dirty": false,
+    "git_untracked_count": null,
+    "captured_at": "2026-11-07T13:10:20+00:00",
+    "note": "Captured for the committed code at 8aed25e before the live run; tracked tree clean. Provenance reconstructed during the schema migration."
+  }
 }

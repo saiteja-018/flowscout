@@ -9,6 +9,9 @@ python-dotenv>=1.0.0
 # Host-browser verification (mock mode uses a real local Chromium)
 playwright>=1.64.0
 
+# Screenshot dimension checks in the reproducible live runner
+pillow>=10.0
+
 # Tests
 pytest>=8.0
 pytest-asyncio>=0.23.0

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import atexit
-import hashlib
 import json
 import os
 import platform
@@ -42,6 +41,7 @@ except ImportError:  # pragma: no cover - python-dotenv is a core dependency
     pass
 
 from app.evidence_io import atomic_write_json, atomic_write_text
+from app.provenance import capture_provenance
 from app.qa_agent import (
     ACTIONS_LOG,
     EVIDENCE_DIR,
@@ -54,35 +54,24 @@ from app.qa_agent import (
     run_generated_test,
     write_generated_specs,
 )
-from app.sandbox_runner import MockSandboxAdapter, SandboxAdapter, create_adapter
+from app.report_schemas import SCHEMA_VERSION
+from app.sandbox_runner import SandboxAdapter, create_adapter
+from scripts.live_common import (
+    GUEST_APP_BASE_URL,
+    GUEST_APP_PORT,
+    TARGET_DEFAULT,
+    deploy_guest_fixture,
+    live_hourly_rate,
+    live_size_id,
+    sha256,
+    utcnow,
+    visible_guest_browser_default,
+)
 
 COMMANDS_PATH = PROJECT_ROOT / "logs" / "commands.jsonl"
 DEMO_PATH = PROJECT_ROOT / "demo" / "walkthrough.mp4"
 ARTIFACT_BACKUP_ROOT = PROJECT_ROOT / "tmp" / "artifact-backups"
-TARGET_DEFAULT = "http://127.0.0.1:8090"
-# Hourly rates by named size, from /v1/billing/sizes.
-LIVE_HOURLY_USD = {
-    "micro": 0.015,
-    "small": 0.02,
-    "standard": 0.03,
-    "memory": 0.04,
-    "large": 0.08,
-    "xl": 0.16,
-}
 LIVE_BROWSER_RUNTIMES = {"celesto_cdp", "guest_playwright_exec"}
-
-
-def live_size_id() -> str:
-    return os.getenv("CELESTO_SIZE_ID", "standard").strip().lower()
-
-
-def live_hourly_rate() -> float:
-    return LIVE_HOURLY_USD.get(live_size_id(), 0.03)
-
-
-def visible_guest_browser_default() -> bool:
-    value = os.getenv("FLOWSCOUT_VISIBLE_BROWSER", "1").strip().lower()
-    return value not in {"0", "false", "no", "off"}
 
 
 def run_cost_usd(wall_clock_s: float, execution_mode: str) -> float:
@@ -126,17 +115,11 @@ def live_verification(execution_mode: str, runs: list[dict[str, Any]]) -> bool:
     )
 
 
-def utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def write_json(path: Path, payload: Any) -> None:
+    if isinstance(payload, dict):
+        payload.setdefault("schema_version", SCHEMA_VERSION)
     atomic_write_json(path, payload)
     print(f"  wrote {path.relative_to(PROJECT_ROOT)}")
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def clean_artifacts() -> None:
@@ -334,72 +317,6 @@ def stop_target(process: subprocess.Popen[str] | None) -> None:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
         process.kill()
-
-
-GUEST_APP_BASE_URL = "http://127.0.0.1:8090"
-GUEST_APP_PORT = 8090
-
-
-def deploy_guest_fixture(adapter: SandboxAdapter, sandbox_name: str) -> None:
-    """Deploy and start the ShopDemo fixture inside the named sandbox.
-
-    The CDP browser lives in the same guest, so it reaches the fixture on
-    localhost; no host service or public tunnel is involved. Every command
-    passes the deny-by-default policy (the pip install is an exact-match
-    deploy exception) and is audited like any other command.
-    """
-    app_source = (PROJECT_ROOT / "app" / "target_saas_app.py").read_text(encoding="utf-8")
-    healthcheck_source = (PROJECT_ROOT / "app" / "guest_healthcheck.py").read_text(encoding="utf-8")
-    browser_worker_source = (PROJECT_ROOT / "app" / "guest_browser_worker.py").read_text(encoding="utf-8")
-    browser_launcher_source = (PROJECT_ROOT / "app" / "guest_browser_launcher.py").read_text(encoding="utf-8")
-
-    uploads = (
-        ("/workspace/flowscout/target_saas_app.py", app_source),
-        ("/workspace/flowscout/guest_healthcheck.py", healthcheck_source),
-        ("/workspace/flowscout/guest_browser_worker.py", browser_worker_source),
-        ("/workspace/flowscout/guest_browser_launcher.py", browser_launcher_source),
-    )
-    for path, source in uploads:
-        write = adapter.write_text(sandbox_name, path, source)
-        if not write.ok:
-            raise RuntimeError(f"guest upload of {path} failed: {write.stderr}")
-
-    # Exact-match policy exception: only this precise install string is allowed.
-    install = adapter.run_command(
-        sandbox_name,
-        "pip install --quiet fastapi uvicorn python-multipart",
-        timeout=240,
-    )
-    if not install.ok:
-        raise RuntimeError(f"guest dependency install failed: {install.stderr or install.stdout}")
-
-    start = adapter.run_command(
-        sandbox_name,
-        "nohup python3 /workspace/flowscout/target_saas_app.py --serve "
-        "> /workspace/flowscout/server.log 2>&1 &",
-        timeout=30,
-        audit_command="start guest ShopDemo fixture (nohup, background)",
-    )
-    if not start.ok:
-        raise RuntimeError(f"guest fixture start failed: {start.stderr or start.stdout}")
-
-    health = adapter.run_command(
-        sandbox_name,
-        "python3 /workspace/flowscout/guest_healthcheck.py",
-        timeout=150,
-        audit_command="healthcheck guest ShopDemo fixture",
-    )
-    if not health.ok:
-        log_tail = adapter.run_command(
-            sandbox_name,
-            "cat /workspace/flowscout/server.log",
-            timeout=30,
-            audit_command="read guest server log",
-        )
-        raise RuntimeError(
-            "guest fixture did not become healthy: "
-            f"{health.stderr or health.stdout}; server log: {log_tail.stdout[-500:]}"
-        )
 
 
 def verify_lifecycle_cleanup(adapter: SandboxAdapter, base_url: str) -> dict[str, Any]:
@@ -1020,6 +937,7 @@ def write_runtime_manifest(
     base_url: str,
     *,
     guest_browser_visible: bool = True,
+    provenance: dict[str, Any] | None = None,
 ) -> None:
     celesto_importable = False
     celesto_error = None
@@ -1030,6 +948,7 @@ def write_runtime_manifest(
     except Exception as exc:
         celesto_error = f"{type(exc).__name__}: {exc}"
     payload = {
+        "schema_version": SCHEMA_VERSION,
         "generated_at": utcnow(),
         "execution_mode": mode,
         "target_url": base_url,
@@ -1048,6 +967,7 @@ def write_runtime_manifest(
             ["npx.cmd" if os.name == "nt" else "npx", "playwright", "--version"], timeout=30
         ),
         "node_playwright_specs": str((PROJECT_ROOT / "tests" / "generated").relative_to(PROJECT_ROOT)),
+        "provenance": provenance or capture_provenance(PROJECT_ROOT),
         "source_files": {
             str(path.relative_to(PROJECT_ROOT)).replace("\\", "/"): sha256(path)
             for path in [
@@ -1056,6 +976,7 @@ def write_runtime_manifest(
                 PROJECT_ROOT / "app" / "ownership.py",
                 PROJECT_ROOT / "app" / "evidence_io.py",
                 PROJECT_ROOT / "app" / "report_schemas.py",
+                PROJECT_ROOT / "app" / "provenance.py",
                 PROJECT_ROOT / "app" / "guest_browser_launcher.py",
                 PROJECT_ROOT / "app" / "guest_browser_worker.py",
                 PROJECT_ROOT / "app" / "guest_healthcheck.py",
@@ -1063,6 +984,8 @@ def write_runtime_manifest(
                 PROJECT_ROOT / "app" / "target_saas_app.py",
                 PROJECT_ROOT / "playwright.config.ts",
                 PROJECT_ROOT / "scripts" / "run_live_demo.py",
+                PROJECT_ROOT / "scripts" / "run_live_single.py",
+                PROJECT_ROOT / "scripts" / "live_common.py",
                 PROJECT_ROOT / "scripts" / "verify_submission.py",
             ]
         },
@@ -1116,6 +1039,9 @@ def main() -> int:
     print("=" * 68)
 
     started = time.monotonic()
+    # Capture provenance before prepare_artifacts() deletes/rewrites tracked
+    # evidence files; otherwise a clean checkout would be reported dirty.
+    provenance = capture_provenance(PROJECT_ROOT)
     prepare_artifacts()
     # The host fixture always runs: mock mode browses it directly, and the
     # generated-spec test matrix executes against it in both modes. Live mode
@@ -1159,6 +1085,7 @@ def main() -> int:
             execution_mode,
             args.base_url,
             guest_browser_visible=guest_browser_visible,
+            provenance=provenance,
         )
         checks = verify_lifecycle_cleanup(adapter, args.base_url)
         print(f"cleanup checks: {checks}")

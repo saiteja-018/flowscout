@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "failed_step": 7,
   "total_steps": 10,
   "policy": "fresh",

@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "execution_mode": "mock",
   "live_celesto_verified": false,
   "capabilities": [

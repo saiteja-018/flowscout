@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and evidence verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Verify committed reports and evidence
+        run: python scripts/verify_submission.py
+
+  mock-smoke:
+    name: Mock smoke (2 runs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Python Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Node Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run two mock evaluation runs
+        run: python scripts/run_live_demo.py --mode mock --runs 2
+
+      - name: Verify regenerated reports and evidence
+        run: python scripts/verify_submission.py

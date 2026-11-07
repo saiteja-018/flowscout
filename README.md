@@ -1,5 +1,10 @@
 # FlowScout
 
+[![CI](https://github.com/saiteja-018/flowscout/actions/workflows/ci.yml/badge.svg)](https://github.com/saiteja-018/flowscout/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](requirements.txt)
+[![Live Celesto](https://img.shields.io/badge/live%20Celesto-guest%20browser-2f855a.svg)](#live-celesto-run)
+
 **Browser QA that produces evidence, not just a pass/fail.**
 
 FlowScout is a browser QA agent for small SaaS teams that need to reproduce a
@@ -7,6 +12,29 @@ checkout defect, generate tests for it, and prove what happened in the sandbox.
 It ships with a deterministic ShopDemo target, an optional LLM planner that
 proposes each step from a validated candidate set, a Celesto Cloud adapter, a
 PostgreSQL run ledger, a Flight Deck dashboard, and a recorded evaluation.
+
+![Live guest-browser run: six SAVE20 applications produce a -$25.99 total](reports/live-evidence/live-visible-step-09-2026-11-07.jpg)
+
+*Live run `live-visible-guest-2026-11-07` inside a Celesto Micro sandbox: the
+guest Chromium applies `SAVE20` six times and the checkout total becomes
+`-$25.99`. Screenshot hash and provenance are recorded in
+[`reports/live-evidence/live-visible-guest-2026-11-07.json`](reports/live-evidence/live-visible-guest-2026-11-07.json).*
+
+## Results at a glance
+
+| Result | Evidence |
+|---|---|
+| Mock benchmark: 20/20 workflows, 100% success, median 2.730 s, P90 2.880 s, $0.00 | [`reports/reliability.json`](reports/reliability.json) |
+| Live single-sandbox run: SAVE20 stacking reproduced, cleanup confirmed, 102.39 s agent clock | [`reports/live-evidence/live-visible-guest-2026-11-07.json`](reports/live-evidence/live-visible-guest-2026-11-07.json) |
+| Generated tests: 4/4 expectations met (reproduction + regression, broken + fixed) | [`reports/evidence/test-matrix.json`](reports/evidence/test-matrix.json) |
+| Controlled step-7 HTTP 503: fresh sandbox, redeploy, retry, complete | [`reports/failure_trace.jsonl`](reports/failure_trace.jsonl) |
+| Prompt-injection command blocked before dispatch, host canary unchanged | [`reports/containment.json`](reports/containment.json) |
+| Independent verifier: schemas, hashes, arithmetic, live truthfulness, secret scan | `python scripts\verify_submission.py` |
+
+The mock and live boundaries are explicit. Mock timings measure orchestration and
+a real local Chromium, not Celesto boot time. The live record is one sandbox, not
+a 20-run benchmark. The platform CDP gateway returned HTTP 501 on Micro, so the
+verified browser path is the in-guest Playwright browser; CDP remains unverified.
 
 ## Problem statement
 
@@ -184,9 +212,13 @@ record. The CDP gateway on a paid `standard` size is expected to work but is
 not yet verified from this repository. `live_celesto_verified` in
 `reports/reliability.json` reflects the evaluation mode; the separate
 `reports/live-evidence/` index distinguishes current verification, historical
-attempts, and quarantined stale failures. The stale free-trial 429 records are
-under `reports/live-evidence/quarantine/` and are never presented as current
-success.
+attempts, the controlled recovery record when present, and quarantined stale
+failures. The
+stale free-trial 429 records are under `reports/live-evidence/quarantine/` and
+are never presented as current success. The reproducible runner is
+[`scripts/run_live_single.py`](scripts/run_live_single.py); its records pin the
+git commit, dirty state, and schema version so a reviewer can rerun the exact
+code that produced them.
 
 ## The planner: scripted or LLM
 
@@ -457,13 +489,55 @@ in-guest Playwright fallback is used there. With account credit, the `standard`
 size unlocks the CDP gateway. Runtime cost at the configured size rate is well
 under $1 for a 20-run evaluation. Never reuse mock numbers as live results.
 
+### Reproduce the live run
+
+[`scripts/run_live_single.py`](scripts/run_live_single.py) is the reproducible
+single-sandbox runner. It creates one fresh sandbox, deploys ShopDemo inside the
+guest, drives the guest browser through the ten-step workflow, deletes the
+sandbox, and archives a hash-addressed evidence bundle. It never falls back to
+mock when `CELESTO_MODE` or credentials are missing.
+
+```powershell
+Copy-Item .env.example .env    # set CELESTO_API_KEY
+python -m playwright install chromium
+
+# 1. Normal live run: writes reports/live-evidence/runs/<run_id>/
+python scripts\run_live_single.py
+
+# 2. Controlled recovery: step-7 HTTP 503, fresh replacement sandbox, retry
+python scripts\run_live_single.py --inject-failure
+
+# 3. Promote a run into the canonical index (opt-in)
+python scripts\run_live_single.py --inject-failure --promote
+```
+
+Each run writes `record.json` plus `actions.jsonl`, `commands.jsonl`,
+`trace.jsonl`, screenshots, and `run.json` under
+`reports/live-evidence/runs/<run_id>/`. The record includes the schema version,
+the git commit/branch, whether tracked files were dirty at capture time, the
+untracked-file count, sandbox boot/cleanup timings, and provider delete
+confirmation.
+
+`--promote` is deliberately strict: it refuses a dirty tracked tree or a
+missing commit, updates `reports/live-evidence/index.json` atomically, then runs
+the independent verifier. If verification fails, the original index is restored
+byte-for-byte. Recovery records are stored in the index's `recovery` section and
+never replace the normal `current` record.
+
+The free trial allows **two new sandboxes per hour**. A normal run uses one; the
+recovery demonstration uses two (failed + fresh replacement). A quota `429` is
+reported with the reset guidance instead of being hidden, and
+`--create-patience` controls how long the runner waits for a throttled create.
+The retained sandbox `cmp_3e12f5354e89` is protected by
+`CELESTO_KEEP_COMPUTER_IDS` and is never touched.
+
 ### Tests
 
 ```powershell
 python -m pytest -q
 ```
 
-Current suite: **162 passing tests**. It covers API contracts, degraded reads,
+Current suite: **175 passing tests**. It covers API contracts, degraded reads,
 ledger write rejection, target fixture behavior, coupon arithmetic, selector
 and URL validation, command policy (including the exact-match deploy exception
 and chunked upload redirection), REST client behaviour against a scripted
@@ -472,7 +546,9 @@ injection resistance, mock honesty, live fail-closed behaviour, live browser
 verification semantics, artifact rollback on failed runs, generated specs,
 cleanup on failure/interrupt, ownership-registry fail-closed and scoped-reclaim
 behaviour, atomic evidence writes, report schemas and verifier arithmetic,
-runtime source hashes, and live-evidence index/quarantine consistency.
+runtime source hashes, live-evidence index/quarantine consistency, git
+provenance capture, and the reproducible live runner (record construction,
+cleanup confirmation, recovery events, and transactional promotion).
 
 Run one generated test manually:
 
@@ -538,11 +614,14 @@ app/qa_agent.py             browser workflow, planner hooks, specs, containment
 app/llm_planner.py          optional LLM planner (candidate-set contract)
 app/ownership.py            local ownership registry, scoped reclaim policy
 app/evidence_io.py          atomic report/evidence writes
+app/provenance.py           git commit/branch/dirty provenance capture
 app/report_schemas.py       report schemas + cross-file verifier
 app/sandbox_runner.py       policy, audit log, REST cloud client, adapters
 app/target_saas_app.py      deterministic ShopDemo fixture (+ --serve guest mode)
 app/guest_healthcheck.py    in-guest fixture health probe
 scripts/run_live_demo.py    evidence/evaluation orchestrator
+scripts/run_live_single.py  reproducible live run + recovery record runner
+scripts/live_common.py      shared in-guest deploy and live helpers
 scripts/run_live_smoke.py   live sandbox browser smoke
 scripts/reclaim_orphans.py  dry-run-first owned-orphan reclaimer
 scripts/verify_submission.py report/evidence verifier CLI
@@ -553,6 +632,8 @@ logs/commands.jsonl         append-only command audit records
 logs/ownership/registry.json local owned-computer registry (gitignored)
 demo/walkthrough.mp4        real browser recording of the workflow
 seeds/01_runs.sql           PostgreSQL seed
+.github/workflows/ci.yml    tests + verifier + two-run mock smoke
+LICENSE                     MIT license
 ```
 
 Key evidence:
@@ -624,3 +705,7 @@ workflow); it did not fabricate live telemetry, cloud failures, video, or cost
 figures. The mock/live boundary is
 recorded in the runtime manifest, dashboard badge, reliability report, and
 postmortem.
+
+## License
+
+[MIT](LICENSE) © 2026 Sai Teja Satyam Seeti

@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "attack": "prompt_injection_exfil",
   "blocked": true,
   "host_untouched": true,
