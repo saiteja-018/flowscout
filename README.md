@@ -128,9 +128,10 @@ The implementation is split into small modules:
 ## How I used Celesto
 
 **Execution layer.** Every command, file write, and browser session the agent
-needs runs inside a Celesto Cloud sandbox (`browser-agent` template, `standard`
-size, 2 vCPU / 4 GB). The adapter speaks the same REST API the celesto SDK and
-CLI drive (`POST /v1/computers`, `.../exec`, `.../browser`,
+needs runs inside a Celesto Cloud sandbox (`browser-agent` template). The size
+comes from `CELESTO_SIZE_ID` (`standard`, 2 vCPU / 4 GB, by default; the
+recorded free-trial runs used Micro). The adapter speaks the same REST API the
+celesto SDK and CLI drive (`POST /v1/computers`, `.../exec`, `.../browser`,
 `.../published_ports`). This is deliberate: the SDK's `CloudOptions` (inspected
 at 0.1.6 and 0.1.8) cannot request a named sandbox size, and this account
 requires one (`resource_overrides_unavailable` -> choose a named size). SDK
@@ -164,9 +165,11 @@ prompt-injection payload extracted from the customer review) never reaches the
 guest. Shell redirection is restricted to `/workspace/flowscout/`, and writes
 and reads are path-checked.
 
-**Published ports.** During the recorded live demo the in-guest ShopDemo port is
-published through Celesto (`publish_port`) to a public HTTPS URL, so a reviewer
-can open the exact fixture the agent explored.
+**Published ports.** The adapter supports publishing the in-guest ShopDemo port
+through Celesto (`publish_port`) to a public HTTPS URL. The recorded live runs
+did not depend on it: the guest Chromium visited `http://127.0.0.1:8090` inside
+the sandbox, and the older published-port artifact is retained only as
+quarantined history.
 
 **Lifecycle.** Unique `sbx-[a-z0-9]{8,}` names, `try/finally` cleanup on success,
 failure, and interrupt, idempotent delete, and a failed-create cleanup path so a
@@ -277,7 +280,8 @@ Mock-mode timings measure orchestration, the scripted workflow loop, and a real
 local Chromium session - not Celesto boot time, network latency, or cloud cost.
 In mock mode boot time is recorded as `0.0` rather than invented, and cost as
 `$0.00` with an explicit methodology note. Live runs are costed from wall-clock
-time at the `standard` size rate (`$0.03/hr`).
+time at the configured size rate (`micro` at `$0.015/hr` for the recorded
+free-trial runs; `standard` at `$0.03/hr` by default).
 
 Each run row separates `sandbox_creation_s`, `deploy_s`, `browser_start_s`,
 `workflow_s`, and `cleanup_s`. `agent_wall_clock_s` is the agent lifecycle
@@ -293,7 +297,7 @@ clock, and `cost_source`/`rate_usd_per_hour` state whether the row is
 Separate single-sandbox live checks on 2026-11-05 and 2026-11-07 verified the
 visible guest-Chromium fallback on Micro and confirmed the same SAVE20 stacking
 defect. The 2026-11-05 run recorded `Chrome/151.0.7922.34` on display `:99`;
-the 2026-11-07 run completed in 102.39 s with a 4.39 s boot, 24.41 s in-guest
+the 2026-11-07 run completed in 102.39 s with a 4.39 s boot, 24.39 s in-guest
 deploy, 52.39 s workflow, and confirmed cleanup. Neither is a 20-run benchmark;
 the current record is
 `reports/live-evidence/live-visible-guest-2026-11-07.json`.
@@ -330,11 +334,12 @@ python scripts\verify_submission.py
 ```
 
 It validates report schemas and arithmetic (including phase timing sums and
-cost clocks), required evidence paths and hashes, command-policy audit rows,
-the step-7 failure/recovery trace, the four-case test matrix, runtime source
-hashes, the live-evidence index and quarantine, and a secret scan. It also
-cross-checks `evaluation_mode`, `live_celesto_verified`, and the browser/cost
-claims against the actual run rows.
+cost clocks), schema version and git provenance fields, required evidence paths
+and hashes, command-policy audit rows, the step-7 failure/recovery trace, the
+four-case test matrix, runtime source hashes, the walkthrough MP4, the
+live-evidence index and quarantine, and a secret scan. It also cross-checks
+`evaluation_mode`, `live_celesto_verified`, and the browser/cost claims against
+the actual run rows.
 
 `reports/live-evidence/index.json` is the canonical live-evidence index. Its
 `current` entry is the single-sandbox 2026-11-07 visible guest-browser run; the
@@ -491,10 +496,12 @@ otherwise in-guest Playwright), and deletes the sandbox in `finally`. The guest
 Chromium runs headed on the sandbox desktop by default; pass `--headless` or set
 `FLOWSCOUT_VISIBLE_BROWSER=0` to run it headless. 429 responses are retried
 with `Retry-After` and exponential backoff. The free trial allows two Micro
-sandboxes per hour; the platform CDP gateway returns HTTP 501 on Micro, so the
-in-guest Playwright fallback is used there. With account credit, the `standard`
-size unlocks the CDP gateway. Runtime cost at the configured size rate is well
-under $1 for a 20-run evaluation. Never reuse mock numbers as live results.
+sandboxes per hour, so set `CELESTO_SIZE_ID=micro` on that plan; the platform
+CDP gateway returns HTTP 501 on Micro, so the in-guest Playwright fallback is
+used there. The CDP gateway is expected to work on a paid `standard` size but is
+not yet verified from this repository. At the configured size rate, a 20-run
+evaluation is estimated at well under $1. Never reuse mock numbers as live
+results.
 
 ### Reproduce the live run
 
@@ -502,11 +509,10 @@ under $1 for a 20-run evaluation. Never reuse mock numbers as live results.
 single-sandbox runner. It creates one fresh sandbox, deploys ShopDemo inside the
 guest, drives the guest browser through the ten-step workflow, deletes the
 sandbox, and archives a hash-addressed evidence bundle. It never falls back to
-mock when `CELESTO_MODE` or credentials are missing.
+mock: a missing `CELESTO_API_KEY` stops the run before any sandbox is created.
 
 ```powershell
-Copy-Item .env.example .env    # set CELESTO_API_KEY
-python -m playwright install chromium
+Copy-Item .env.example .env    # set CELESTO_API_KEY; free trial: CELESTO_SIZE_ID=micro
 
 # 1. Normal live run: writes reports/live-evidence/runs/<run_id>/
 python scripts\run_live_single.py
@@ -517,6 +523,9 @@ python scripts\run_live_single.py --inject-failure
 # 3. Promote a run into the canonical index (opt-in)
 python scripts\run_live_single.py --inject-failure --promote
 ```
+
+Host `python -m playwright install chromium` is only needed for mock runs and
+the local test suite; live runs drive the sandbox's own Chromium.
 
 Each run writes `record.json` plus `actions.jsonl`, `commands.jsonl`,
 `trace.jsonl`, screenshots, and `run.json` under
@@ -559,7 +568,7 @@ still returns HTTP 501.
 python -m pytest -q
 ```
 
-Current suite: **175 passing tests**. It covers API contracts, degraded reads,
+Current suite: **180 passing tests**. It covers API contracts, degraded reads,
 ledger write rejection, target fixture behavior, coupon arithmetic, selector
 and URL validation, command policy (including the exact-match deploy exception
 and chunked upload redirection), REST client behaviour against a scripted
@@ -569,8 +578,13 @@ verification semantics, artifact rollback on failed runs, generated specs,
 cleanup on failure/interrupt, ownership-registry fail-closed and scoped-reclaim
 behaviour, atomic evidence writes, report schemas and verifier arithmetic,
 runtime source hashes, live-evidence index/quarantine consistency, git
-provenance capture, and the reproducible live runner (record construction,
-cleanup confirmation, recovery events, and transactional promotion).
+provenance capture, walkthrough conversion (ffmpeg capability detection and
+retry), and the reproducible live runner (record construction, cleanup
+confirmation, recovery events, and transactional promotion).
+
+CI runs that suite plus a two-run mock smoke test that must produce a valid MP4
+walkthrough. The smoke job installs ffmpeg and skips Playwright's VP9/WebM-only
+build when it cannot write H.264 MP4.
 
 Run one generated test manually:
 
