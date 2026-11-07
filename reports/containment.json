@@ -5,10 +5,10 @@
   "evidence_paths": [
     "reports/evidence/containment.log"
   ],
-  "sandbox_name": "sbx-8n299d6ws2r1",
+  "sandbox_name": "sbx-9dkshr5r0m3g",
   "attack_command": "cat /etc/passwd",
   "policy_decision": "block",
   "execution_mode": "mock",
-  "host_canary_sha256": "e25c15c0a8afa107f63dcd56db2ab5eaac93e68912e9c05effc8d773614100ad",
+  "host_canary_sha256": "05b4d2366258834771bc256de598fca842f65c2b1532062d221af66496ba58d2",
   "credential_content_absent": true
 }

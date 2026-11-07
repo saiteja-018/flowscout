@@ -31,10 +31,18 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Iterable, Literal, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+
+from app.ownership import (
+    OwnershipRegistry,
+    OwnershipRegistryError,
+    reclaim_min_age_s,
+    reclaim_mode,
+    record_age_s,
+)
 
 logger = logging.getLogger("flowscout.sandbox")
 
@@ -94,8 +102,8 @@ DENIED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
 # attempt is still audited like any other command.
 EXACT_ALLOWED_COMMANDS: frozenset[str] = frozenset(
     {
-        "pip install --quiet fastapi uvicorn",
-        "pip3 install --quiet fastapi uvicorn",
+        "pip install --quiet fastapi uvicorn python-multipart",
+        "pip3 install --quiet fastapi uvicorn python-multipart",
     }
 )
 
@@ -637,6 +645,18 @@ class CelestoCloudClient:
             raise SandboxExecutionError(f"Celesto get failed: {self._detail(response)}")
         return response.json()
 
+    def list_computers(self) -> list[dict[str, Any]]:
+        response = self._request("GET", "/v1/computers")
+        if response.status_code >= 400:
+            raise SandboxExecutionError(f"Celesto list failed: {self._detail(response)}")
+        data = response.json()
+        if isinstance(data, list):
+            return data
+        for key in ("computers", "items", "data"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return []
+
     def wait_until_running(self, computer_id: str, timeout: float) -> tuple[str, float]:
         started = time.monotonic()
         deadline = started + timeout
@@ -691,7 +711,7 @@ class CelestoCloudClient:
 
     def publish_port(self, computer_id: str, port: int) -> dict[str, Any]:
         response = self._request(
-            "POST", f"/v1/computers/{computer_id}/published_ports", json_body={"port": port}
+            "POST", f"/v1/computers/{computer_id}/published-ports", json_body={"port": port}
         )
         if response.status_code >= 400:
             raise SandboxExecutionError(
@@ -700,7 +720,7 @@ class CelestoCloudClient:
         entry = response.json()
         deadline = time.monotonic() + 60.0
         while time.monotonic() < deadline and entry.get("status") not in ("ready", "active", "error", "failed"):
-            listing = self._request("GET", f"/v1/computers/{computer_id}/published_ports")
+            listing = self._request("GET", f"/v1/computers/{computer_id}/published-ports")
             if listing.status_code == 200:
                 for item in listing.json() or []:
                     if item.get("port") == port:
@@ -745,6 +765,7 @@ class CelestoSandboxAdapter(SandboxAdapter):
         size_id: str | None = None,
         startup_timeout: float | None = None,
         client: Any = None,
+        ownership_registry: OwnershipRegistry | None = None,
     ) -> None:
         super().__init__(command_log_path=command_log_path)
         self._api_key = (api_key if api_key is not None else os.getenv("CELESTO_API_KEY", "")).strip()
@@ -753,6 +774,8 @@ class CelestoSandboxAdapter(SandboxAdapter):
         self._size_id = (size_id or os.getenv("CELESTO_SIZE_ID", "standard")).strip()
         self._startup_timeout = startup_timeout or float(os.getenv("CELESTO_STARTUP_TIMEOUT_S", "240"))
         self._computer_ids: dict[str, str] = {}
+        self._ownership = ownership_registry or OwnershipRegistry()
+        self._browser_gateway_down = False
         self._client: Any = client
         self._sdk_available = False
         self._sdk_error: str | None = None
@@ -785,11 +808,282 @@ class CelestoSandboxAdapter(SandboxAdapter):
         if sandbox_name in self._computer_ids:
             raise SandboxUnavailableError(f"sandbox {sandbox_name!r} already exists")
 
+        patience = float(os.getenv("CELESTO_CREATE_PATIENCE_S", "1800"))
+        deadline = time.monotonic() + patience
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                return self._create_once(sandbox_name)
+            except SandboxUnavailableError as exc:
+                text = str(exc)
+                throttled = "429" in text or "rate limit" in text.lower()
+                if throttled and "retained_sandbox_limit" in text:
+                    mode = reclaim_mode()
+                    if mode == "off":
+                        raise SandboxUnavailableError(
+                            "Celesto retained-sandbox quota is exhausted and automatic "
+                            "orphan reclamation is off (CELESTO_AUTO_RECLAIM=off). "
+                            "Free a slot, raise the quota, or review and apply the "
+                            "scoped reclaimer: `python scripts/reclaim_orphans.py` "
+                            "then `python scripts/reclaim_orphans.py --apply --yes`."
+                        ) from exc
+                    candidates = self.reclaim_orphans(dry_run=(mode == "dry-run"))
+                    if mode == "apply" and candidates:
+                        continue
+                    if mode == "dry-run":
+                        raise SandboxUnavailableError(
+                            "Celesto retained-sandbox quota is exhausted; "
+                            f"{len(candidates)} FlowScout-owned candidate(s) can be "
+                            "reclaimed. Review with `python scripts/reclaim_orphans.py` "
+                            "and apply with "
+                            "`python scripts/reclaim_orphans.py --apply --yes`."
+                        ) from exc
+                if not throttled or time.monotonic() >= deadline:
+                    raise
+                logger.warning(
+                    "create of %s throttled by quota (attempt %d): %s; waiting for the "
+                    "quota window before retrying",
+                    sandbox_name, attempt, text[:120],
+                )
+                time.sleep(120.0)
+
+    def plan_reclaim(
+        self,
+        *,
+        min_age_s: float | None = None,
+        keep: Iterable[str] | None = None,
+    ) -> dict[str, Any]:
+        """Build a fail-closed reclamation plan without deleting anything.
+
+        Only computers present in the local ownership registry are considered.
+        The registry records the template used at create time, so a cloud
+        computer whose template no longer matches is skipped. A missing or
+        corrupt registry, or an unavailable cloud listing, yields no
+        candidates.
+        """
+        keep_ids = set(self._computer_ids.values())
+        keep_ids.update(
+            item.strip()
+            for item in os.getenv("CELESTO_KEEP_COMPUTER_IDS", "").split(",")
+            if item.strip()
+        )
+        keep_ids.update(str(item).strip() for item in (keep or []) if str(item).strip())
+        age_limit = reclaim_min_age_s() if min_age_s is None else max(0.0, float(min_age_s))
+        plan: dict[str, Any] = {
+            "registry": str(self._ownership.path),
+            "min_age_s": age_limit,
+            "keep_ids": sorted(keep_ids),
+            "candidates": [],
+            "skipped": [],
+            "registry_error": None,
+            "cloud_error": None,
+        }
+        try:
+            records = self._ownership.records()
+        except OwnershipRegistryError as exc:
+            plan["registry_error"] = str(exc)
+            logger.warning("Orphan reclamation disabled: %s", exc)
+            return plan
+        try:
+            computers = self._cloud().list_computers()
+        except Exception as exc:
+            plan["cloud_error"] = f"{type(exc).__name__}: {exc}"
+            logger.warning("Orphan reclamation disabled: cloud listing failed: %s", exc)
+            return plan
+        cloud_by_id = {
+            str(computer.get("id") or ""): computer
+            for computer in computers
+            if computer.get("id")
+        }
+        now = datetime.now(timezone.utc)
+        for record in records:
+            computer_id = str(record.get("computer_id") or "")
+            if not computer_id:
+                continue
+            reason = ""
+            if record.get("status") == "deleted":
+                reason = "already_deleted"
+            elif computer_id in keep_ids:
+                reason = "keep_protected"
+            else:
+                age_s = record_age_s(record, now=now)
+                if age_s is None:
+                    reason = "invalid_created_at"
+                elif age_s < age_limit:
+                    reason = "too_young"
+            if not reason:
+                cloud = cloud_by_id.get(computer_id)
+                if cloud is None:
+                    reason = "not_present_in_cloud"
+                elif str(cloud.get("status") or "") in {"deleted", "deleting"}:
+                    reason = "cloud_deleted"
+                else:
+                    recorded_template = str(record.get("template_id") or "")
+                    cloud_template = str(cloud.get("template_id") or "")
+                    if (
+                        recorded_template
+                        and cloud_template
+                        and recorded_template != cloud_template
+                    ):
+                        reason = "template_mismatch"
+            if reason:
+                plan["skipped"].append(
+                    {"computer_id": computer_id, "reason": reason}
+                )
+                continue
+            plan["candidates"].append(dict(record))
+        return plan
+
+    def apply_reclaim_plan(self, plan: dict[str, Any]) -> list[str]:
+        """Delete the candidates in a plan, auditing every attempt."""
+        reclaimed: list[str] = []
+        for record in plan.get("candidates", []):
+            computer_id = str(record.get("computer_id") or "")
+            if not computer_id:
+                continue
+            try:
+                confirmed = self._cloud().delete_computer(computer_id)
+            except Exception as exc:
+                logger.warning("orphan reclaim of %s failed: %s", computer_id, exc)
+                try:
+                    self._ownership.mark_deleted(
+                        computer_id,
+                        confirmed=False,
+                        reason=f"reclaim failed: {type(exc).__name__}",
+                    )
+                except OwnershipRegistryError as registry_error:
+                    logger.warning(
+                        "could not record failed reclaim of %s: %s",
+                        computer_id,
+                        registry_error,
+                    )
+                self._logger.log(
+                    sandbox_name=str(record.get("logical_name") or "sbx-orphanreclaim"),
+                    command=f"reclaim orphan computer {computer_id}",
+                    decision="allow",
+                    execution_mode="live",
+                    provider_id=computer_id,
+                    detail=f"reclaim failed: {type(exc).__name__}",
+                )
+                continue
+            try:
+                self._ownership.mark_deleted(
+                    computer_id,
+                    confirmed=confirmed,
+                    reason="scoped orphan reclaim",
+                )
+            except OwnershipRegistryError as exc:
+                logger.warning(
+                    "could not record reclaim of %s: %s", computer_id, exc
+                )
+            self._logger.log(
+                sandbox_name=str(record.get("logical_name") or "sbx-orphanreclaim"),
+                command=f"reclaim orphan computer {computer_id}",
+                decision="allow",
+                execution_mode="live",
+                provider_id=computer_id,
+                detail=(
+                    "FlowScout-owned registry candidate; "
+                    f"template={record.get('template_id')}; confirmed={confirmed}"
+                ),
+            )
+            if confirmed:
+                reclaimed.append(computer_id)
+        if reclaimed:
+            logger.info("reclaimed orphan computer(s): %s", ", ".join(reclaimed))
+        return reclaimed
+
+    def reclaim_orphans(
+        self,
+        *,
+        dry_run: bool | None = None,
+        min_age_s: float | None = None,
+        keep: Iterable[str] | None = None,
+    ) -> list[str]:
+        """Reclaim only FlowScout-owned registry candidates.
+
+        ``dry_run`` overrides ``CELESTO_AUTO_RECLAIM``. With no override, the
+        environment decides: ``off`` (default) does nothing, ``dry-run``
+        returns candidates without deleting, and ``apply`` deletes them.
+        Unregistered cloud computers are never listed for deletion.
+        """
+        if dry_run is True:
+            mode = "dry-run"
+        elif dry_run is False:
+            mode = "apply"
+        else:
+            mode = reclaim_mode()
+        if mode == "off":
+            return []
+        plan = self.plan_reclaim(min_age_s=min_age_s, keep=keep)
+        if plan["registry_error"] or plan["cloud_error"]:
+            return []
+        if mode == "dry-run":
+            for record in plan["candidates"]:
+                self._logger.log(
+                    sandbox_name=str(record.get("logical_name") or "sbx-orphanreclaim"),
+                    command=f"reclaim candidate {record.get('computer_id')} (dry-run)",
+                    decision="allow",
+                    execution_mode="live",
+                    provider_id=str(record.get("computer_id") or ""),
+                    detail=(
+                        "no deletion performed; FlowScout ownership registry "
+                        f"template={record.get('template_id')}"
+                    ),
+                )
+            return [str(record["computer_id"]) for record in plan["candidates"]]
+        return self.apply_reclaim_plan(plan)
+
+    def _register_ownership(
+        self, computer_id: str, sandbox_name: str, computer: dict[str, Any] | None = None
+    ) -> None:
+        try:
+            self._ownership.register(
+                computer_id=computer_id,
+                logical_name=sandbox_name,
+                template_id=str(
+                    (computer or {}).get("template_id") or self._template_id
+                ),
+                size_id=str((computer or {}).get("size_id") or self._size_id),
+                image=self._image,
+            )
+        except Exception as exc:
+            # Reclamation is fail-closed: an unregistered computer is simply
+            # never auto-reclaimed. The workflow still deletes it on cleanup.
+            logger.error(
+                "Ownership registration failed for %s: %s: %s",
+                computer_id,
+                type(exc).__name__,
+                exc,
+            )
+
+    def _mark_ownership_deleted(
+        self, computer_id: str, *, confirmed: bool, reason: str
+    ) -> None:
+        try:
+            self._ownership.mark_deleted(
+                computer_id, confirmed=confirmed, reason=reason
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not update ownership registry for %s: %s: %s",
+                computer_id,
+                type(exc).__name__,
+                exc,
+            )
+
+    def _create_once(self, sandbox_name: str) -> SandboxInfo:
         cloud = self._cloud()
         computer = cloud.create_computer(
             template_id=self._template_id, size_id=self._size_id, image=self._image
         )
         computer_id = str(computer["id"])
+        # Register immediately after the provider returns an id, before the
+        # long wait for running. A crash after this point leaves a candidate
+        # the scoped reclaimer can find; a crash before it leaves an
+        # unregistered computer that is deliberately never touched.
+        self._register_ownership(computer_id, sandbox_name, computer)
         try:
             status, boot_seconds = cloud.wait_until_running(computer_id, self._startup_timeout)
             if status != "running":
@@ -797,10 +1091,18 @@ class CelestoSandboxAdapter(SandboxAdapter):
                     f"Celesto computer did not reach running (status={status})"
                 )
             browser_url: str | None = None
-            try:
-                browser_url = cloud.browser_url(computer_id)
-            except Exception as exc:
-                logger.warning("Celesto browser connection unavailable for %s: %s", sandbox_name, exc)
+            if not self._browser_gateway_down:
+                try:
+                    browser_url = cloud.browser_url(computer_id, wait_seconds=5.0)
+                except Exception as exc:
+                    # e.g. Micro trial: interactive connections never become
+                    # available. Remember so later sandboxes skip the wait.
+                    self._browser_gateway_down = True
+                    logger.warning(
+                        "Celesto browser gateway unavailable (%s); in-guest browser "
+                        "runtime will be used for this and later sandboxes",
+                        str(exc)[:120],
+                    )
 
             info = SandboxInfo(
                 sandbox_name=sandbox_name,
@@ -830,9 +1132,20 @@ class CelestoSandboxAdapter(SandboxAdapter):
         except BaseException:
             # A failed start may still have allocated billable resources.
             try:
-                cloud.delete_computer(computer_id)
+                deleted = cloud.delete_computer(computer_id)
             except Exception as cleanup_error:
                 logger.error("Cleanup after failed start of %s failed: %s", sandbox_name, cleanup_error)
+                self._mark_ownership_deleted(
+                    computer_id,
+                    confirmed=False,
+                    reason=f"create failed; delete failed: {type(cleanup_error).__name__}",
+                )
+            else:
+                self._mark_ownership_deleted(
+                    computer_id,
+                    confirmed=deleted,
+                    reason="create failed",
+                )
             raise
 
     def run_command(
@@ -947,10 +1260,10 @@ class CelestoSandboxAdapter(SandboxAdapter):
     def get_browser_url(self, sandbox_name: str) -> Optional[str]:
         info = self._info(sandbox_name)
         computer_id = self._computer_ids.get(sandbox_name)
-        if computer_id is None:
+        if computer_id is None or self._browser_gateway_down:
             return info.browser_url
         try:
-            url = self._cloud().browser_url(computer_id)
+            url = self._cloud().browser_url(computer_id, wait_seconds=15.0)
             info.browser_url = url
             return url
         except Exception:
@@ -982,6 +1295,11 @@ class CelestoSandboxAdapter(SandboxAdapter):
             confirmed = self._cloud().delete_computer(computer_id)
         except Exception as exc:
             logger.error("Celesto delete failed for %s: %s", sandbox_name, exc)
+            self._mark_ownership_deleted(
+                computer_id,
+                confirmed=False,
+                reason=f"cleanup delete failed: {type(exc).__name__}",
+            )
             self._logger.log(
                 sandbox_name=sandbox_name,
                 command=f"delete sandbox {sandbox_name}",
@@ -991,6 +1309,11 @@ class CelestoSandboxAdapter(SandboxAdapter):
                 detail=f"cleanup failed: {type(exc).__name__}",
             )
             return CleanupResult(sandbox_name, False, f"delete failed: {type(exc).__name__}")
+        self._mark_ownership_deleted(
+            computer_id,
+            confirmed=confirmed,
+            reason="workflow cleanup",
+        )
         self._computer_ids.pop(sandbox_name, None)
         if info is not None:
             info.state = "deleted"
@@ -1023,6 +1346,7 @@ def create_adapter(
     mode: str | None = None,
     *,
     command_log_path: Path | None = None,
+    ownership_registry: OwnershipRegistry | None = None,
 ) -> SandboxAdapter:
     """Create the configured adapter without silent fallback.
 
@@ -1033,7 +1357,10 @@ def create_adapter(
     if selected == "mock":
         return MockSandboxAdapter(command_log_path=command_log_path)
     if selected == "live":
-        adapter = CelestoSandboxAdapter(command_log_path=command_log_path)
+        adapter = CelestoSandboxAdapter(
+            command_log_path=command_log_path,
+            ownership_registry=ownership_registry,
+        )
         adapter._require_ready()
         return adapter
     raise SandboxUnavailableError(f"unsupported CELESTO_MODE {selected!r}; use 'live' or 'mock'")

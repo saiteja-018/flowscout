@@ -4,7 +4,7 @@
   "capabilities": [
     {
       "id": "browser",
-      "why": "The workflow's entire browser surface runs through the sandbox browser runtime: in live runs a Celesto browser-agent sandbox serves a CDP endpoint that Playwright connects to, so pages, screenshots, and the poisoned review are rendered inside the guest, never on the host. Mock runs replay the same validated action schema through a host Playwright stand-in.",
+      "why": "The workflow's entire browser surface runs through the sandbox browser runtime: the browser-agent template's own Chromium renders every page, screenshot, and the poisoned review inside the guest. When the platform serves its CDP gateway the host Playwright attaches to it; otherwise the guest's preinstalled Playwright drives the same Chromium over the audited exec path. Mock runs replay the same validated action schema through a host Playwright stand-in.",
       "evidence_path": "reports/evidence/actions.jsonl"
     },
     {

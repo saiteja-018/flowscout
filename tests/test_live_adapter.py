@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from app.qa_agent import QAWorkflowRunner
+from app.ownership import OwnershipRegistry
 from app.sandbox_runner import (
     CelestoCloudClient,
     CelestoSandboxAdapter,
@@ -63,6 +64,7 @@ def make_adapter(tmp_path, fake: FakeCloud) -> CelestoSandboxAdapter:
         command_log_path=tmp_path / "commands.jsonl",
         api_key="test-key",
         client=fake,
+        ownership_registry=OwnershipRegistry(tmp_path / "ownership.json"),
     )
     return adapter
 
@@ -110,7 +112,7 @@ def test_live_adapter_deploy_exception_is_exact_match(tmp_path) -> None:
     adapter = make_adapter(tmp_path, fake)
     adapter.create("sbx-livetest02")
 
-    allowed = adapter.run_command("sbx-livetest02", "pip install --quiet fastapi uvicorn")
+    allowed = adapter.run_command("sbx-livetest02", "pip install --quiet fastapi uvicorn python-multipart")
     assert allowed.decision == "allow"
 
     # A near-miss is still blocked: no prefix or fuzzy matching.
@@ -121,7 +123,7 @@ def test_live_adapter_deploy_exception_is_exact_match(tmp_path) -> None:
     assert blocked.stderr.startswith("BLOCKED:")
 
     commands = [command for _, command in fake.executed]
-    assert commands == ["pip install --quiet fastapi uvicorn"]
+    assert commands == ["pip install --quiet fastapi uvicorn python-multipart"]
 
 
 def test_live_adapter_chunked_write(tmp_path) -> None:
@@ -138,10 +140,16 @@ def test_live_adapter_chunked_write(tmp_path) -> None:
         adapter.write_text("sbx-livetest03", "/etc/passwd", "nope")
 
 
-def test_live_adapter_refuses_missing_browser_url(tmp_path) -> None:
+def test_live_adapter_refuses_without_any_sandbox_browser(tmp_path) -> None:
     from app.sandbox_runner import SandboxUnavailableError
 
-    fake = FakeCloud(browser_error=SandboxUnavailableError("Celesto browser connection unavailable (501)"))
+    class NoBrowserCloud(FakeCloud):
+        def exec_command(self, computer_id: str, command: str, timeout: int = 30) -> dict:
+            if "guest_browser_launcher" in command:
+                return {"exit_code": 1, "stdout": "", "stderr": "launcher unavailable"}
+            return super().exec_command(computer_id, command, timeout)
+
+    fake = NoBrowserCloud(browser_error=SandboxUnavailableError("Celesto browser connection unavailable (501)"))
     adapter = make_adapter(tmp_path, fake)
     runner = QAWorkflowRunner(
         adapter,
@@ -152,9 +160,13 @@ def test_live_adapter_refuses_missing_browser_url(tmp_path) -> None:
     )
     outcome = runner.run(inject_failure=False)
     assert outcome.success is False
-    assert "did not expose a CDP browser URL" in outcome.error
+    # Platform CDP unavailable AND the in-guest browser could not start: the
+    # run fails closed; no host browser is ever substituted.
+    assert "guest chromium launcher failed" in outcome.error
     assert outcome.cleanup_ok is True
     assert fake.deleted  # the failed sandbox was still cleaned up
+    decisions = [e for e in runner.trace if e.event == "browser_runtime_selected"]
+    assert decisions, "the runtime fallback must be traced, not silent"
 
 
 def test_sandbox_browser_mode_never_falls_back_to_host(tmp_path) -> None:
@@ -220,7 +232,7 @@ class RESTMachine(httpx.MockTransport):
                     "expires_at": "2100-01-01T00:00:00+00:00",
                 },
             )
-        if path == "/v1/computers/cmp_rest001/published_ports" and method == "POST":
+        if path == "/v1/computers/cmp_rest001/published-ports" and method == "POST":
             return httpx.Response(201, json={"port": 8090, "status": "ready", "url": "https://p.example.test"})
         if path == "/v1/computers/cmp_rest001" and method == "DELETE":
             self.state["cmp_rest001"] = "deleted"

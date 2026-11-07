@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-11-05T14:50:28.640531+00:00",
+  "purpose": "retained live sandbox kept alive for manual review",
+  "provider_id": "cmp_3e12f5354e89",
+  "provider_name": "pasteur",
+  "logical_name": "sbx-pasteur01",
+  "status": "running",
+  "image": "ubuntu-24.04",
+  "template_id": "browser-agent",
+  "size_id": "micro",
+  "published_port": {
+    "id": "cpp_8eef53941d9a",
+    "computer_id": "cmp_3e12f5354e89",
+    "port": 8090,
+    "url": "https://p-3vk6x2k2s6aqnz6x.celesto.dev",
+    "status": "published",
+    "created_at": "2026-10-24T17:19:51.482502Z"
+  },
+  "public_health": {
+    "url": "https://p-3vk6x2k2s6aqnz6x.celesto.dev/shop/api/health",
+    "status_code": 200,
+    "body": "{\"status\":\"ok\",\"target\":\"shopdemo\"}"
+  },
+  "browser_verification": {
+    "url": "https://p-3vk6x2k2s6aqnz6x.celesto.dev/shop/",
+    "title": "Shop - ShopDemo",
+    "verified": true,
+    "method": "in-app Chromium opened the public URL and rendered the ShopDemo storefront"
+  },
+  "kept_in_env": true,
+  "command_log": "reports/live-evidence/logs/keepalive-commands.jsonl",
+  "note": "The sandbox is running and must not be deleted. It is protected from orphan reclamation by CELESTO_KEEP_COMPUTER_IDS."
+}

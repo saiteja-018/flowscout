@@ -1,0 +1,7 @@
+{
+  "sandbox_name": "sbx-0i58ff3irn29",
+  "port": 8090,
+  "status": "published",
+  "url": "https://p-a7zwu3pd7ctji6rq.celesto.dev",
+  "note": "the in-guest fixture was publicly reachable through Celesto while this sandbox lived; cleanup deletes it with the sandbox"
+}

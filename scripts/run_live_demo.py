@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
 import os
@@ -33,6 +34,14 @@ import httpx
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:  # pragma: no cover - python-dotenv is a core dependency
+    pass
+
+from app.evidence_io import atomic_write_json, atomic_write_text
 from app.qa_agent import (
     ACTIONS_LOG,
     EVIDENCE_DIR,
@@ -49,15 +58,72 @@ from app.sandbox_runner import MockSandboxAdapter, SandboxAdapter, create_adapte
 
 COMMANDS_PATH = PROJECT_ROOT / "logs" / "commands.jsonl"
 DEMO_PATH = PROJECT_ROOT / "demo" / "walkthrough.mp4"
+ARTIFACT_BACKUP_ROOT = PROJECT_ROOT / "tmp" / "artifact-backups"
 TARGET_DEFAULT = "http://127.0.0.1:8090"
-# Celesto "standard" size (2 vCPU / 4 GB) hourly rate from /v1/billing/sizes.
-LIVE_HOURLY_USD = 0.03
+# Hourly rates by named size, from /v1/billing/sizes.
+LIVE_HOURLY_USD = {
+    "micro": 0.015,
+    "small": 0.02,
+    "standard": 0.03,
+    "memory": 0.04,
+    "large": 0.08,
+    "xl": 0.16,
+}
+LIVE_BROWSER_RUNTIMES = {"celesto_cdp", "guest_playwright_exec"}
+
+
+def live_size_id() -> str:
+    return os.getenv("CELESTO_SIZE_ID", "standard").strip().lower()
+
+
+def live_hourly_rate() -> float:
+    return LIVE_HOURLY_USD.get(live_size_id(), 0.03)
+
+
+def visible_guest_browser_default() -> bool:
+    value = os.getenv("FLOWSCOUT_VISIBLE_BROWSER", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 def run_cost_usd(wall_clock_s: float, execution_mode: str) -> float:
     if execution_mode != "live":
         return 0.0
-    return round(wall_clock_s / 3600.0 * LIVE_HOURLY_USD, 5)
+    return round(wall_clock_s / 3600.0 * live_hourly_rate(), 5)
+
+
+def cost_metadata(
+    agent_wall_clock_s: float,
+    total_wall_clock_s: float,
+    execution_mode: str,
+) -> dict[str, Any]:
+    """Cost fields that state exactly which clock and rate produced them."""
+    if execution_mode != "live":
+        return {
+            "cost_usd": 0.0,
+            "cost_including_creation_usd": 0.0,
+            "cost_source": "mock_zero_cost",
+            "rate_usd_per_hour": 0.0,
+        }
+    return {
+        "cost_usd": run_cost_usd(agent_wall_clock_s, execution_mode),
+        "cost_including_creation_usd": run_cost_usd(total_wall_clock_s, execution_mode),
+        "cost_source": "celesto_size_rate_wall_clock",
+        "rate_usd_per_hour": live_hourly_rate(),
+    }
+
+
+def live_verification(execution_mode: str, runs: list[dict[str, Any]]) -> bool:
+    """True only when every live run really used a sandbox browser and cleaned up."""
+    return bool(
+        execution_mode == "live"
+        and runs
+        and all(
+            row.get("success")
+            and row.get("browser_verified")
+            and row.get("cleanup_ok")
+            for row in runs
+        )
+    )
 
 
 def utcnow() -> str:
@@ -65,8 +131,7 @@ def utcnow() -> str:
 
 
 def write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_json(path, payload)
     print(f"  wrote {path.relative_to(PROJECT_ROOT)}")
 
 
@@ -82,7 +147,7 @@ def clean_artifacts() -> None:
     for path in GENERATED_TEST_DIR.glob("*.spec.ts"):
         path.unlink()
     COMMANDS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    COMMANDS_PATH.write_text("", encoding="utf-8")
+    atomic_write_text(COMMANDS_PATH, "")
     for name in PROJECT_ROOT.glob("reports/*.json"):
         name.unlink()
     for name in PROJECT_ROOT.glob("reports/*.md"):
@@ -94,6 +159,121 @@ def clean_artifacts() -> None:
         DEMO_PATH.unlink()
     shutil.rmtree(PROJECT_ROOT / "test-results", ignore_errors=True)
     shutil.rmtree(PROJECT_ROOT / "playwright-report", ignore_errors=True)
+
+
+_ACTIVE_BACKUP: Path | None = None
+
+
+def _artifact_paths() -> list[Path]:
+    paths: list[Path] = []
+    if EVIDENCE_DIR.exists():
+        paths.append(EVIDENCE_DIR)
+    paths.extend(sorted(REPORTS_DIR.glob("*.json")))
+    paths.extend(sorted(REPORTS_DIR.glob("*.md")))
+    trace = REPORTS_DIR / "failure_trace.jsonl"
+    if trace.exists():
+        paths.append(trace)
+    if DEMO_PATH.exists():
+        paths.append(DEMO_PATH)
+    if COMMANDS_PATH.exists():
+        paths.append(COMMANDS_PATH)
+    paths.extend(sorted(GENERATED_TEST_DIR.glob("*.spec.ts")))
+    for name in ("test-results", "playwright-report"):
+        path = PROJECT_ROOT / name
+        if path.exists():
+            paths.append(path)
+    return paths
+
+
+def _copy_artifact(source: Path, destination: Path) -> None:
+    if source.is_dir():
+        shutil.copytree(source, destination)
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
+def prepare_artifacts() -> Path:
+    """Back up the current evidence, then clear it for a fresh run.
+
+    The backup is restored automatically unless ``commit_artifacts`` is called.
+    That keeps a failed or interrupted live run from leaving the submission
+    tree without its reports, video, or command log.
+    """
+    global _ACTIVE_BACKUP
+    if _ACTIVE_BACKUP is not None:
+        raise RuntimeError("an artifact transaction is already active")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    backup = ARTIFACT_BACKUP_ROOT / stamp
+    backup.mkdir(parents=True, exist_ok=False)
+    manifest: dict[str, str] = {}
+    for path in _artifact_paths():
+        relative = path.relative_to(PROJECT_ROOT)
+        _copy_artifact(path, backup / relative)
+        manifest[str(relative).replace("\\", "/")] = "dir" if path.is_dir() else "file"
+    write_json(backup / "manifest.json", {"created_at": utcnow(), "paths": manifest})
+    _ACTIVE_BACKUP = backup
+    atexit.register(_restore_on_exit)
+    clean_artifacts()
+    print(f"  artifact backup: {backup.relative_to(PROJECT_ROOT)}")
+    return backup
+
+
+def commit_artifacts(*, verify: bool = True) -> None:
+    """Keep the freshly generated artifacts and discard the rollback copy.
+
+    Verification runs before the backup is discarded. A failed verification
+    restores the pre-run evidence immediately, so a broken report set can never
+    replace a known-good one.
+    """
+    global _ACTIVE_BACKUP
+    if _ACTIVE_BACKUP is None:
+        return
+    if verify:
+        from app.report_schemas import ReportVerificationError, verify_submission
+
+        result = verify_submission(PROJECT_ROOT)
+        if not result.ok:
+            backup = _ACTIVE_BACKUP
+            _ACTIVE_BACKUP = None
+            for error in result.errors:
+                print(f"VERIFY ERROR: {error}")
+            restore_artifacts(backup)
+            raise ReportVerificationError(result)
+    shutil.rmtree(_ACTIVE_BACKUP, ignore_errors=True)
+    _ACTIVE_BACKUP = None
+
+
+def restore_artifacts(backup: Path) -> None:
+    """Restore the pre-run artifact set after a failed or interrupted run."""
+    manifest_path = backup / "manifest.json"
+    if not manifest_path.exists():
+        return
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    clean_artifacts()
+    for relative, kind in manifest["paths"].items():
+        source = backup / relative
+        destination = PROJECT_ROOT / relative
+        if kind == "dir":
+            if destination.exists():
+                shutil.rmtree(destination)
+            shutil.copytree(source, destination)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+    print(f"  restored artifacts from {backup.relative_to(PROJECT_ROOT)}")
+
+
+def _restore_on_exit() -> None:
+    global _ACTIVE_BACKUP
+    backup = _ACTIVE_BACKUP
+    if backup is None:
+        return
+    _ACTIVE_BACKUP = None
+    try:
+        restore_artifacts(backup)
+    except Exception as exc:
+        print(f"ERROR: artifact rollback failed: {type(exc).__name__}: {exc}")
 
 
 def wait_for_target(base_url: str, timeout: float = 20.0) -> None:
@@ -170,18 +350,24 @@ def deploy_guest_fixture(adapter: SandboxAdapter, sandbox_name: str) -> None:
     """
     app_source = (PROJECT_ROOT / "app" / "target_saas_app.py").read_text(encoding="utf-8")
     healthcheck_source = (PROJECT_ROOT / "app" / "guest_healthcheck.py").read_text(encoding="utf-8")
+    browser_worker_source = (PROJECT_ROOT / "app" / "guest_browser_worker.py").read_text(encoding="utf-8")
+    browser_launcher_source = (PROJECT_ROOT / "app" / "guest_browser_launcher.py").read_text(encoding="utf-8")
 
-    write = adapter.write_text(sandbox_name, "/workspace/flowscout/target_saas_app.py", app_source)
-    if not write.ok:
-        raise RuntimeError(f"guest fixture upload failed: {write.stderr}")
-    write = adapter.write_text(sandbox_name, "/workspace/flowscout/guest_healthcheck.py", healthcheck_source)
-    if not write.ok:
-        raise RuntimeError(f"guest healthcheck upload failed: {write.stderr}")
+    uploads = (
+        ("/workspace/flowscout/target_saas_app.py", app_source),
+        ("/workspace/flowscout/guest_healthcheck.py", healthcheck_source),
+        ("/workspace/flowscout/guest_browser_worker.py", browser_worker_source),
+        ("/workspace/flowscout/guest_browser_launcher.py", browser_launcher_source),
+    )
+    for path, source in uploads:
+        write = adapter.write_text(sandbox_name, path, source)
+        if not write.ok:
+            raise RuntimeError(f"guest upload of {path} failed: {write.stderr}")
 
     # Exact-match policy exception: only this precise install string is allowed.
     install = adapter.run_command(
         sandbox_name,
-        "pip install --quiet fastapi uvicorn",
+        "pip install --quiet fastapi uvicorn python-multipart",
         timeout=240,
     )
     if not install.ok:
@@ -355,13 +541,28 @@ def run_evaluation(
     execution_mode: str,
     bootstrapper: Any = None,
     planner: Any = None,
+    *,
+    guest_browser_visible: bool = True,
 ) -> dict[str, Any]:
     runs: list[dict[str, Any]] = []
     for index in range(num_runs):
         sandbox_name = generate_sandbox_name()
-        started_at = utcnow()
-        start = time.monotonic()
+        row_started = time.monotonic()
+        row_started_at = utcnow()
+        started_at = row_started_at
+        creation_s = 0.0
         try:
+            if execution_mode == "live":
+                # Creation stays outside the agent clock: the adapter waits out
+                # cloud creation-quota throttles patiently, so its duration is
+                # recorded separately instead of inflating agent work.
+                print(f"  eval {index + 1}/{num_runs}: creating fresh sandbox {sandbox_name}")
+                creation_started = time.monotonic()
+                try:
+                    adapter.create(sandbox_name)
+                finally:
+                    creation_s = round(time.monotonic() - creation_started, 2)
+                started_at = utcnow()
             runner = QAWorkflowRunner(
                 adapter,
                 sandbox_name,
@@ -371,50 +572,94 @@ def run_evaluation(
                 use_sandbox_browser=execution_mode == "live",
                 fixture_bootstrapper=bootstrapper,
                 planner=planner,
+                sandbox_precreated=execution_mode == "live",
+                guest_browser_visible=guest_browser_visible,
             )
             outcome = runner.run(inject_failure=False)
+            browser_verified = bool(
+                outcome.browser_runtime in LIVE_BROWSER_RUNTIMES
+                and any(action.success for action in outcome.actions)
+            )
+            agent_wall = float(outcome.agent_wall_clock_s)
+            total_wall = round(creation_s + float(outcome.total_wall_clock_s), 2)
             row = {
                 "sandbox_name": outcome.sandbox_name,
                 "fresh": True,
                 "success": bool(outcome.success and outcome.cleanup_ok),
                 "classification": outcome.classification.value,
                 "error": outcome.error,
-                "wall_clock_s": round(time.monotonic() - start, 2),
+                "wall_clock_s": agent_wall,
                 "boot_to_ready_s": outcome.boot_to_ready_s,
-                "cost_usd": run_cost_usd(time.monotonic() - start, execution_mode),
+                "sandbox_creation_s": (
+                    round(creation_s + outcome.sandbox_creation_s, 2)
+                    if execution_mode == "live"
+                    else outcome.sandbox_creation_s
+                ),
+                "deploy_s": outcome.deploy_s,
+                "browser_start_s": outcome.browser_start_s,
+                "workflow_s": outcome.workflow_s,
+                "cleanup_s": outcome.cleanup_s,
+                "agent_wall_clock_s": agent_wall,
+                "total_wall_clock_s": total_wall,
+                "end_to_end_wall_clock_s": round(time.monotonic() - row_started, 2),
+                **cost_metadata(agent_wall, total_wall, execution_mode),
                 "start_time": started_at,
                 "end_time": utcnow(),
                 "cleanup_ok": outcome.cleanup_ok,
+                "browser_runtime": outcome.browser_runtime,
+                "browser_verified": browser_verified,
             }
         except Exception as exc:
+            elapsed = round(time.monotonic() - row_started, 2)
+            agent_wall = round(max(0.0, elapsed - creation_s), 2)
+            total_wall = round(creation_s + agent_wall, 2)
             row = {
                 "sandbox_name": sandbox_name,
                 "fresh": True,
                 "success": False,
                 "classification": DefectClassification.ENVIRONMENT_FAILURE.value,
                 "error": f"{type(exc).__name__}: {exc}",
-                "wall_clock_s": round(time.monotonic() - start, 2),
+                "wall_clock_s": agent_wall,
                 "boot_to_ready_s": 0.0,
-                "cost_usd": run_cost_usd(time.monotonic() - start, execution_mode),
+                "sandbox_creation_s": creation_s,
+                "deploy_s": 0.0,
+                "browser_start_s": 0.0,
+                "workflow_s": 0.0,
+                "cleanup_s": 0.0,
+                "agent_wall_clock_s": agent_wall,
+                "total_wall_clock_s": total_wall,
+                "end_to_end_wall_clock_s": elapsed,
+                **cost_metadata(agent_wall, total_wall, execution_mode),
                 "start_time": started_at,
                 "end_time": utcnow(),
                 "cleanup_ok": False,
+                "browser_runtime": "unavailable",
+                "browser_verified": False,
             }
         runs.append(row)
         print(
             f"  eval {index + 1}/{num_runs}: {'ok' if row['success'] else 'failed'} "
-            f"{row['sandbox_name']} {row['wall_clock_s']}s"
+            f"{row['sandbox_name']} agent={row['wall_clock_s']}s "
+            f"total={row['total_wall_clock_s']}s end-to-end={row['end_to_end_wall_clock_s']}s"
         )
 
     wall_times = sorted(float(row["wall_clock_s"]) for row in runs)
     boot_times = sorted(float(row["boot_to_ready_s"]) for row in runs)
     success_count = sum(1 for row in runs if row["success"])
+    browser_runtimes = sorted(
+        {str(row["browser_runtime"]) for row in runs if row.get("browser_runtime")}
+    )
+    live_celesto_verified = live_verification(execution_mode, runs)
 
     def percentile(values: list[float], fraction: float) -> float:
         if not values:
             return 0.0
         index = max(0, min(len(values) - 1, int(len(values) * fraction + 0.9999) - 1))
         return round(values[index], 3)
+
+    def median_of(key: str) -> float:
+        values = sorted(float(row[key]) for row in runs)
+        return round(median(values), 3) if values else 0.0
 
     summary = {
         "run_count": len(runs),
@@ -423,7 +668,20 @@ def run_evaluation(
         "median_wall_clock_s": round(median(wall_times), 3) if wall_times else 0.0,
         "p90_wall_clock_s": percentile(wall_times, 0.9),
         "median_boot_to_ready_s": round(median(boot_times), 3) if boot_times else 0.0,
+        "median_sandbox_creation_s": median_of("sandbox_creation_s"),
+        "median_deploy_s": median_of("deploy_s"),
+        "median_browser_start_s": median_of("browser_start_s"),
+        "median_workflow_s": median_of("workflow_s"),
+        "median_cleanup_s": median_of("cleanup_s"),
+        "median_agent_wall_clock_s": median_of("agent_wall_clock_s"),
+        "median_total_wall_clock_s": median_of("total_wall_clock_s"),
+        "median_end_to_end_wall_clock_s": median_of("end_to_end_wall_clock_s"),
         "total_cost_usd": round(sum(float(row["cost_usd"]) for row in runs), 4),
+        "total_cost_including_creation_usd": round(
+            sum(float(row["cost_including_creation_usd"]) for row in runs), 4
+        ),
+        "cost_source": "mock_zero_cost" if execution_mode == "mock" else "celesto_size_rate_wall_clock",
+        "rate_usd_per_hour": 0.0 if execution_mode == "mock" else live_hourly_rate(),
         "postmortem_path": "reports/postmortem.md",
     }
     return {
@@ -431,30 +689,42 @@ def run_evaluation(
         **summary,
         "evaluation_mode": execution_mode,
         "sandbox_runtime": "mock" if execution_mode == "mock" else "celesto_cloud",
-        "browser_runtime": "host_playwright" if execution_mode == "mock" else "celesto_cdp",
-        "live_celesto_verified": execution_mode == "live",
+        "browser_runtime": (
+            "host_playwright"
+            if execution_mode == "mock"
+            else (
+                browser_runtimes[0]
+                if len(browser_runtimes) == 1
+                else ("mixed" if browser_runtimes else "none")
+            )
+        ),
+        "browser_runtimes": browser_runtimes,
+        "sandbox_size": live_size_id() if execution_mode == "live" else "mock",
+        "live_celesto_verified": live_celesto_verified,
         "cost_methodology": (
             "Mock sandbox runs incur no Celesto charge. Cost is recorded as $0.00 and must "
             "not be presented as live Celesto pricing."
             if execution_mode == "mock"
             else (
-                "Live runs are costed from wall-clock time at the Celesto standard size rate "
-                f"of ${LIVE_HOURLY_USD:.3f}/hr (vcpus=2, ram=4096MB); the platform bills the "
-                "same per-hour rate while a sandbox exists."
+                "Live runs are costed from wall-clock time at the Celesto "
+                f"{live_size_id()} size rate of ${live_hourly_rate():.3f}/hr; the platform "
+                "bills the same per-hour rate while a sandbox exists."
             )
         ),
         "note": (
-            "Twenty deterministic evaluation runs used a mock sandbox adapter and a real "
+            f"{len(runs)} deterministic evaluation runs used a mock sandbox adapter and a real "
             "host Playwright browser. Browser actions, target behavior, tests, and cleanup "
             "are real; Celesto boot latency and cloud cost are not measured."
             if execution_mode == "mock"
-            else "Runs executed against Celesto Cloud sandboxes and a CDP browser."
+            else "Runs executed against fresh Celesto Cloud sandboxes with the browser "
+            "runtime inside the guest (platform CDP when available, otherwise in-guest "
+            "Playwright over the audited exec path)."
         ),
         "generated_at": utcnow(),
     }
 
 
-def generate_problem() -> dict[str, Any]:
+def generate_problem(execution_mode: str = "mock", run_count: int = 20) -> dict[str, Any]:
     return {
         "who": (
             "FlowScout is a browser QA agent for teams that need reproducible evidence of "
@@ -472,22 +742,28 @@ def generate_problem() -> dict[str, Any]:
             "Evidence includes logs/commands.jsonl, reports/failure_trace.jsonl, "
             "reports/evidence/actions.jsonl, Playwright screenshots and video, generated "
             "reproduction/regression specs, a four-case host test matrix, independent "
-            "containment canary hashes, and 20 measured mock-mode runs."
+            f"containment canary hashes, and {run_count} measured {execution_mode}-mode runs."
         ),
         "idea_source": "original",
     }
 
 
-def generate_capabilities(execution_mode: str) -> dict[str, Any]:
+def generate_capabilities(
+    execution_mode: str,
+    *,
+    live_celesto_verified: bool = False,
+) -> dict[str, Any]:
     capabilities: list[dict[str, Any]] = [
         {
             "id": "browser",
             "why": (
                 "The workflow's entire browser surface runs through the sandbox browser "
-                "runtime: in live runs a Celesto browser-agent sandbox serves a CDP endpoint "
-                "that Playwright connects to, so pages, screenshots, and the poisoned review "
-                "are rendered inside the guest, never on the host. Mock runs replay the same "
-                "validated action schema through a host Playwright stand-in."
+                "runtime: the browser-agent template's own Chromium renders every page, "
+                "screenshot, and the poisoned review inside the guest. When the platform "
+                "serves its CDP gateway the host Playwright attaches to it; otherwise the "
+                "guest's preinstalled Playwright drives the same Chromium over the audited "
+                "exec path. Mock runs replay the same validated action schema through a "
+                "host Playwright stand-in."
             ),
             "evidence_path": "reports/evidence/actions.jsonl",
         },
@@ -518,7 +794,7 @@ def generate_capabilities(execution_mode: str) -> dict[str, Any]:
         )
     return {
         "execution_mode": execution_mode,
-        "live_celesto_verified": execution_mode == "live",
+        "live_celesto_verified": bool(live_celesto_verified),
         "capabilities": capabilities,
     }
 
@@ -666,8 +942,9 @@ def generate_postmortem(
                 [
                     "2. Mock sandbox metrics measure orchestration and real browser work, not Celesto "
                     "boot time, networking, or cloud cost.",
-                    "3. The current host has no Celesto API key. Live cloud execution is therefore not "
-                    "claimed. The live adapter fails closed when credentials or the SDK are unavailable.",
+                    "3. Mock mode does not contact Celesto. Live cloud execution is therefore not "
+                    "claimed in this report; the live adapter fails closed when credentials or the "
+                    "SDK are unavailable.",
                 ]
                 if evaluation["evaluation_mode"] == "mock"
                 else [
@@ -680,6 +957,16 @@ def generate_postmortem(
             "4. Cloud snapshot rollback is not used because the inspected SDK does not expose it "
             "on CloudComputer. Recovery uses replacement sandboxes and fixture reset.",
             "5. Evaluation was sequential; concurrency and 1,000-user behavior are untested.",
+            *(
+                [
+                    "6. A live 20-run benchmark was not attempted: the free trial permits two "
+                    "new sandboxes per hour, while the canonical evaluation creates more than 20 "
+                    "fresh sandboxes. The single-sandbox live check in reports/live-evidence/ is "
+                    "separate evidence, not a 20-run benchmark.",
+                ]
+                if evaluation["evaluation_mode"] == "mock"
+                else []
+            ),
             "",
             "## Corrective actions",
             "",
@@ -721,7 +1008,19 @@ def collect_sandbox_names(*sources: Any) -> list[str]:
     return sorted(names)
 
 
-def write_runtime_manifest(mode: str, base_url: str) -> None:
+def _tool_version(command: list[str], timeout: int = 10) -> str:
+    try:
+        return subprocess.run(command, capture_output=True, text=True, timeout=timeout).stdout.strip()
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return f"unavailable ({type(exc).__name__})"
+
+
+def write_runtime_manifest(
+    mode: str,
+    base_url: str,
+    *,
+    guest_browser_visible: bool = True,
+) -> None:
     celesto_importable = False
     celesto_error = None
     try:
@@ -742,25 +1041,29 @@ def write_runtime_manifest(mode: str, base_url: str) -> None:
         ),
         "celesto_sdk_importable": celesto_importable,
         "celesto_import_error": celesto_error,
+        "guest_browser_visible_requested": bool(guest_browser_visible and mode == "live"),
         "playwright_python": True,
-        "node": subprocess.run(
-            ["node", "--version"], capture_output=True, text=True, timeout=10
-        ).stdout.strip(),
-        "npx_playwright": subprocess.run(
-            ["npx.cmd" if os.name == "nt" else "npx", "playwright", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        ).stdout.strip(),
+        "node": _tool_version(["node", "--version"]),
+        "npx_playwright": _tool_version(
+            ["npx.cmd" if os.name == "nt" else "npx", "playwright", "--version"], timeout=30
+        ),
         "node_playwright_specs": str((PROJECT_ROOT / "tests" / "generated").relative_to(PROJECT_ROOT)),
         "source_files": {
             str(path.relative_to(PROJECT_ROOT)).replace("\\", "/"): sha256(path)
             for path in [
                 PROJECT_ROOT / "app" / "sandbox_runner.py",
                 PROJECT_ROOT / "app" / "qa_agent.py",
+                PROJECT_ROOT / "app" / "ownership.py",
+                PROJECT_ROOT / "app" / "evidence_io.py",
+                PROJECT_ROOT / "app" / "report_schemas.py",
+                PROJECT_ROOT / "app" / "guest_browser_launcher.py",
+                PROJECT_ROOT / "app" / "guest_browser_worker.py",
+                PROJECT_ROOT / "app" / "guest_healthcheck.py",
                 PROJECT_ROOT / "app" / "main.py",
                 PROJECT_ROOT / "app" / "target_saas_app.py",
                 PROJECT_ROOT / "playwright.config.ts",
+                PROJECT_ROOT / "scripts" / "run_live_demo.py",
+                PROJECT_ROOT / "scripts" / "verify_submission.py",
             ]
         },
     }
@@ -779,7 +1082,13 @@ def main() -> int:
         "from a validated candidate set (requires LLM_* env configuration)",
     )
     parser.add_argument("--base-url", default=os.getenv("TARGET_BASE_URL", TARGET_DEFAULT))
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="run the live guest Chromium headless instead of on the sandbox desktop",
+    )
     args = parser.parse_args()
+    guest_browser_visible = visible_guest_browser_default() and not args.headless
 
     if args.mode == "live":
         if not os.getenv("CELESTO_API_KEY", "").strip():
@@ -802,10 +1111,12 @@ def main() -> int:
     print("=" * 68)
     print("FlowScout evidence run")
     print(f"mode={args.mode} runs={args.runs} target={args.base_url}")
+    if args.mode == "live":
+        print(f"guest browser: {'visible' if guest_browser_visible else 'headless'}")
     print("=" * 68)
 
     started = time.monotonic()
-    clean_artifacts()
+    prepare_artifacts()
     # The host fixture always runs: mock mode browses it directly, and the
     # generated-spec test matrix executes against it in both modes. Live mode
     # additionally deploys the same app inside each sandbox guest.
@@ -814,11 +1125,41 @@ def main() -> int:
         adapter = create_adapter(args.mode)
         execution_mode = adapter.execution_mode
         agent_base_url = GUEST_APP_BASE_URL if execution_mode == "live" else args.base_url
-        bootstrapper = deploy_guest_fixture if execution_mode == "live" else None
+
+        def bootstrapper(sandbox_name: str) -> None:
+            deploy_guest_fixture(adapter, sandbox_name)
+
+        def port_publisher(sandbox_name: str) -> None:
+            try:
+                entry = adapter.publish_port(sandbox_name, GUEST_APP_PORT)
+                write_json(
+                    EVIDENCE_DIR / "published-port.json",
+                    {
+                        "sandbox_name": sandbox_name,
+                        "port": GUEST_APP_PORT,
+                        "status": entry.get("status"),
+                        "url": entry.get("url"),
+                        "note": (
+                            "the in-guest fixture was publicly reachable through Celesto "
+                            "while this sandbox lived; cleanup deletes it with the sandbox"
+                        ),
+                    },
+                )
+                print(f"  published app port for {sandbox_name}: {entry.get('url')}")
+            except Exception as exc:
+                print(f"  publish_port failed (continuing): {exc}")
+
+        if execution_mode != "live":
+            bootstrapper = None  # type: ignore[assignment]
+            port_publisher = None  # type: ignore[assignment]
         print(f"adapter={type(adapter).__name__} execution_mode={execution_mode}")
         print(f"agent target: {agent_base_url}" + (" (in-guest fixture)" if bootstrapper else ""))
 
-        write_runtime_manifest(execution_mode, args.base_url)
+        write_runtime_manifest(
+            execution_mode,
+            args.base_url,
+            guest_browser_visible=guest_browser_visible,
+        )
         checks = verify_lifecycle_cleanup(adapter, args.base_url)
         print(f"cleanup checks: {checks}")
 
@@ -833,6 +1174,8 @@ def main() -> int:
             use_sandbox_browser=execution_mode == "live",
             fixture_bootstrapper=bootstrapper,
             planner=planner,
+            port_publisher=port_publisher if execution_mode == "live" else None,
+            guest_browser_visible=guest_browser_visible,
         )
         primary = primary_runner.run(inject_failure=True)
         primary_runner.save_trace(REPORTS_DIR / "failure_trace.jsonl")
@@ -860,7 +1203,15 @@ def main() -> int:
             return 4
 
         print(f"running {args.runs} evaluation runs")
-        evaluation = run_evaluation(adapter, agent_base_url, args.runs, execution_mode, bootstrapper, planner)
+        evaluation = run_evaluation(
+            adapter,
+            agent_base_url,
+            args.runs,
+            execution_mode,
+            bootstrapper,
+            planner,
+            guest_browser_visible=guest_browser_visible,
+        )
         evaluation["planner"] = args.planner
         eval_cleanup_ok = all(row.get("cleanup_ok") for row in evaluation["runs"])
         lifecycle = generate_lifecycle(
@@ -870,15 +1221,24 @@ def main() -> int:
             eval_cleanup_ok,
         )
 
-        write_json(REPORTS_DIR / "problem.json", generate_problem())
-        write_json(REPORTS_DIR / "capabilities.json", generate_capabilities(execution_mode))
+        write_json(
+            REPORTS_DIR / "problem.json",
+            generate_problem(execution_mode, len(evaluation["runs"])),
+        )
+        write_json(
+            REPORTS_DIR / "capabilities.json",
+            generate_capabilities(
+                execution_mode,
+                live_celesto_verified=evaluation["live_celesto_verified"],
+            ),
+        )
         write_json(REPORTS_DIR / "lifecycle.json", lifecycle)
         write_json(REPORTS_DIR / "reliability.json", evaluation)
         write_json(REPORTS_DIR / "containment.json", containment)
         write_json(REPORTS_DIR / "failure_policy.json", generate_failure_policy())
         write_json(REPORTS_DIR / "concurrency.json", generate_concurrency(evaluation))
         postmortem = generate_postmortem(evaluation, matrix, lifecycle)
-        (REPORTS_DIR / "postmortem.md").write_text(postmortem, encoding="utf-8")
+        atomic_write_text(REPORTS_DIR / "postmortem.md", postmortem)
         print("  wrote reports/postmortem.md")
 
         write_json(
@@ -897,7 +1257,11 @@ def main() -> int:
             f"success_rate={summary['success_rate_pct']}% / "
             f"median={summary['median_wall_clock_s']}s / p90={summary['p90_wall_clock_s']}s"
         )
-        print("live Celesto verified: false" if execution_mode == "mock" else "live Celesto verified: true")
+        print(
+            "live Celesto verified: "
+            f"{str(evaluation['live_celesto_verified']).lower()}"
+        )
+        commit_artifacts()
         return 0
     finally:
         stop_target(server)

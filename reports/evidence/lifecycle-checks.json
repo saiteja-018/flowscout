@@ -1,9 +1,9 @@
 {
   "cleanup_on_failure": true,
   "failure_probe_error": "RuntimeError: cleanup probe",
-  "failure_probe_sandbox": "sbx-inbij3f63iuk",
+  "failure_probe_sandbox": "sbx-kur2fuxl87ii",
   "cleanup_on_interrupt": true,
   "interrupt_observed": true,
-  "interrupt_sandbox": "sbx-pxl57969jude",
-  "checked_at": "2026-10-24T16:49:18.158799+00:00"
+  "interrupt_sandbox": "sbx-ulskvlolrgxn",
+  "checked_at": "2026-11-07T12:49:01.554080+00:00"
 }

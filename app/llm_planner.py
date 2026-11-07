@@ -179,12 +179,16 @@ class LLMPlanner:
         payload = {
             "model": self.model,
             "temperature": 0,
-            "max_tokens": 200,
+            "max_tokens": 1024,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
+        # Reasoning models (e.g. Groq's gpt-oss) can spend the whole budget on
+        # hidden reasoning and return empty content; keep effort minimal.
+        if "gpt-oss" in self.model:
+            payload["reasoning_effort"] = "low"
         try:
             response = httpx.post(
                 f"{self.base_url}/chat/completions",

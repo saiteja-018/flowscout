@@ -1,6 +1,6 @@
 # FlowScout Postmortem
 
-Generated: 2026-10-24T16:50:38.525683+00:00
+Generated: 2026-11-07T12:50:45.864864+00:00
 Evaluation mode: mock
 Browser runtime: host_playwright
 Live Celesto verified: false
@@ -9,8 +9,8 @@ Live Celesto verified: false
 
 - Runs: 20
 - Success rate: 100.0%
-- Median wall clock: 1.92s
-- P90 wall clock: 2.7s
+- Median wall clock: 2.73s
+- P90 wall clock: 2.88s
 - Median boot-to-ready: 0.0s
 - Cost: $0.0
 
@@ -39,9 +39,10 @@ The primary demonstration armed a deterministic target failure immediately befor
 
 1. The observed product defect is repeated application of a one-use coupon. The fixed path rejects the second application and preserves a non-negative total.
 2. Mock sandbox metrics measure orchestration and real browser work, not Celesto boot time, networking, or cloud cost.
-3. The current host has no Celesto API key. Live cloud execution is therefore not claimed. The live adapter fails closed when credentials or the SDK are unavailable.
+3. Mock mode does not contact Celesto. Live cloud execution is therefore not claimed in this report; the live adapter fails closed when credentials or the SDK are unavailable.
 4. Cloud snapshot rollback is not used because the inspected SDK does not expose it on CloudComputer. Recovery uses replacement sandboxes and fixture reset.
 5. Evaluation was sequential; concurrency and 1,000-user behavior are untested.
+6. A live 20-run benchmark was not attempted: the free trial permits two new sandboxes per hour, while the canonical evaluation creates more than 20 fresh sandboxes. The single-sandbox live check in reports/live-evidence/ is separate evidence, not a 20-run benchmark.
 
 ## Corrective actions
 

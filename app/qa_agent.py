@@ -33,9 +33,12 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Literal
+
+from app.evidence_io import atomic_write_bytes, atomic_write_text
 from urllib.parse import urlparse
 
 from app.sandbox_runner import (
+    CelestoSandboxAdapter,
     SandboxAdapter,
     SandboxResult,
     SecurityPolicy,
@@ -59,6 +62,9 @@ class ActionType(str, Enum):
     ASSERT_TEXT = "assert_text"
     ASSERT_ATTRIBUTE = "assert_attribute"
     READ_TEXT = "read_text"
+    READ_ATTRIBUTE = "read_attribute"
+    EXISTS = "exists"
+    WAIT_ATTRIBUTE_CHANGE = "wait_attribute_change"
     SCREENSHOT = "screenshot"
     WAIT = "wait"
 
@@ -90,9 +96,16 @@ class BrowserAction:
             ActionType.ASSERT_TEXT,
             ActionType.ASSERT_ATTRIBUTE,
             ActionType.READ_TEXT,
+            ActionType.READ_ATTRIBUTE,
+            ActionType.EXISTS,
+            ActionType.WAIT_ATTRIBUTE_CHANGE,
         } and not _SELECTOR_RE.fullmatch(self.selector):
             raise InvalidAction(f"selector is not permitted by the action schema: {self.selector!r}")
-        if self.action_type == ActionType.ASSERT_ATTRIBUTE and not re.fullmatch(
+        if self.action_type in {
+            ActionType.ASSERT_ATTRIBUTE,
+            ActionType.READ_ATTRIBUTE,
+            ActionType.WAIT_ATTRIBUTE_CHANGE,
+        } and not re.fullmatch(
             r"[a-z][a-z0-9-]{0,40}", self.attribute
         ):
             raise InvalidAction("attribute must be a lowercase HTML attribute name")
@@ -208,6 +221,16 @@ class WorkflowOutcome:
     execution_mode: str
     browser_runtime: str
     planner_mode: str = "scripted"
+    # Phase timings. ``wall_clock_s`` is retained as the legacy alias for
+    # ``agent_wall_clock_s`` so older evidence readers keep working.
+    sandbox_creation_s: float = 0.0
+    deploy_s: float = 0.0
+    browser_start_s: float = 0.0
+    workflow_s: float = 0.0
+    cleanup_s: float = 0.0
+    agent_wall_clock_s: float = 0.0
+    total_wall_clock_s: float = 0.0
+    end_to_end_wall_clock_s: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -218,6 +241,14 @@ class WorkflowOutcome:
             "sandbox_name": self.sandbox_name,
             "wall_clock_s": self.wall_clock_s,
             "boot_to_ready_s": self.boot_to_ready_s,
+            "sandbox_creation_s": self.sandbox_creation_s,
+            "deploy_s": self.deploy_s,
+            "browser_start_s": self.browser_start_s,
+            "workflow_s": self.workflow_s,
+            "cleanup_s": self.cleanup_s,
+            "agent_wall_clock_s": self.agent_wall_clock_s,
+            "total_wall_clock_s": self.total_wall_clock_s,
+            "end_to_end_wall_clock_s": self.end_to_end_wall_clock_s,
             "cleanup_ok": self.cleanup_ok,
             "test_paths": self.test_paths,
             "execution_mode": self.execution_mode,
@@ -319,6 +350,20 @@ class BrowserSession:
                 output = actual
             elif action.action_type == ActionType.READ_TEXT:
                 output = self.page.locator(action.selector).inner_text(timeout=action.timeout_ms)
+            elif action.action_type == ActionType.READ_ATTRIBUTE:
+                output = self.page.locator(action.selector).get_attribute(
+                    action.attribute, timeout=action.timeout_ms
+                ) or ""
+            elif action.action_type == ActionType.EXISTS:
+                output = "true" if self.page.locator(action.selector).count() > 0 else "false"
+            elif action.action_type == ActionType.WAIT_ATTRIBUTE_CHANGE:
+                locator = self.page.locator(action.selector)
+                deadline = time.monotonic() + min(action.timeout_ms, 2000) / 1000.0
+                current = locator.get_attribute(action.attribute) or ""
+                while current == action.value and time.monotonic() < deadline:
+                    self.page.wait_for_timeout(100)
+                    current = locator.get_attribute(action.attribute) or ""
+                output = current
             elif action.action_type == ActionType.WAIT:
                 self.page.wait_for_timeout(min(action.timeout_ms, 5000))
                 output = f"waited {min(action.timeout_ms, 5000)}ms"
@@ -387,6 +432,122 @@ class BrowserSession:
             finally:
                 if self._playwright is not None:
                     self._playwright.stop()
+
+
+class GuestBrowserSession:
+    """Browser session executed inside the guest: Playwright-over-exec.
+
+    Used when the platform CDP gateway is unavailable (e.g. the Micro trial).
+    The guest's own preinstalled Playwright drives its local Chromium, so every
+    browser action, screenshot, and fixture reset still executes inside the
+    sandbox - never on the host. No host browser is ever substituted.
+    """
+
+    def __init__(
+        self,
+        adapter: CelestoSandboxAdapter,
+        sandbox_name: str,
+        base_url: str,
+        *,
+        cdp_port: int = 9333,
+        visible: bool = True,
+    ) -> None:
+        self.adapter = adapter
+        self.sandbox_name = sandbox_name
+        self.base_url = base_url.rstrip("/")
+        self.cdp_port = cdp_port
+        self.visible = visible
+        self._closed = False
+
+    @property
+    def page(self) -> Any:
+        raise RuntimeError(
+            "GuestBrowserSession has no host-side page object; use validated actions"
+        )
+
+    def launcher_command(self) -> str:
+        mode = "--visible" if self.visible else "--headless"
+        return (
+            "nohup python3 /workspace/flowscout/guest_browser_launcher.py "
+            f"{self.cdp_port} {mode} "
+            "> /workspace/flowscout/launcher.log 2>&1 &"
+        )
+
+    def start(self) -> None:
+        result = self.adapter.run_command(
+            self.sandbox_name,
+            self.launcher_command(),
+            timeout=120,
+            audit_command=f"ensure guest chromium CDP on port {self.cdp_port} (nohup, background)",
+        )
+        if not result.ok:
+            raise RuntimeError(f"guest chromium launcher failed: {result.stderr}")
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            log = self.adapter.run_command(
+                self.sandbox_name,
+                "cat /workspace/flowscout/launcher.log",
+                timeout=30,
+                audit_command="read guest browser launcher log",
+            )
+            if '"status": "ok"' in log.stdout:
+                return
+            time.sleep(3)
+        raise RuntimeError("guest chromium did not become healthy in time")
+
+    def _exec_actions(self, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        import shlex
+
+        payload = json.dumps(actions)
+        result = self.adapter.run_command(
+            self.sandbox_name,
+            "python3 /workspace/flowscout/guest_browser_worker.py "
+            f"{shlex.quote(payload)} {shlex.quote(self.base_url)} {self.cdp_port}",
+            timeout=240,
+            audit_command=(
+                f"guest browser batch ({len(actions)} action(s), "
+                f"first={actions[0].get('action_type')})"
+            ),
+        )
+        if not result.ok:
+            raise RuntimeError(f"guest browser worker failed: {(result.stderr or result.stdout)[-500:]}")
+        line = result.stdout.strip().splitlines()[-1]
+        return json.loads(line)["results"]
+
+    def execute(self, action: BrowserAction, step: int) -> ActionRecord:
+        started = time.monotonic()
+        row = self._exec_actions([{**action.to_dict(), "step": step}])[0]
+        screenshot = ""
+        if row.get("screenshot"):
+            data = self.adapter.read_workspace_base64(
+                self.sandbox_name, f"/workspace/flowscout/shots/{row['screenshot']}"
+            )
+            name = f"step-{step:02d}-{int(time.time() * 1000)}.jpg"
+            EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+            atomic_write_bytes(EVIDENCE_DIR / name, data)
+            screenshot = name
+        record = ActionRecord(
+            step=step,
+            action=action,
+            success=bool(row.get("success")),
+            output=str(row.get("output", ""))[:4000],
+            error=str(row.get("error", "")),
+            screenshot=screenshot,
+            wall_ms=round((time.monotonic() - started) * 1000, 1),
+        )
+        BrowserSession._write_action_log(record)
+        return record
+
+    def fixture_post(self, path: str, payload: dict[str, Any] | None = None) -> int:
+        row = self._exec_actions(
+            [{"action_type": "fixture_post", "path": path, "payload": payload or {}}]
+        )[0]
+        status = row.get("status")
+        return int(status) if status is not None else 0
+
+    def close(self) -> None:
+        # Chromium dies with the sandbox; nothing to close on the host side.
+        self._closed = True
 
 
 def generate_sandbox_name(prefix: str = "sbx-") -> str:
@@ -472,7 +633,7 @@ def write_generated_specs() -> list[Path]:
     for name, content in specs.items():
         for directory in (EVIDENCE_DIR, GENERATED_TEST_DIR):
             path = directory / name
-            path.write_text(content, encoding="utf-8")
+            atomic_write_text(path, content)
             written.append(path)
     return written
 
@@ -572,6 +733,9 @@ class QAWorkflowRunner:
         use_sandbox_browser: bool = False,
         fixture_bootstrapper: "Callable[[str], None] | None" = None,
         planner: Any = None,
+        sandbox_precreated: bool = False,
+        port_publisher: "Callable[[str], None] | None" = None,
+        guest_browser_visible: bool = True,
     ) -> None:
         self.adapter = adapter
         self.sandbox_name = validate_sandbox_name(sandbox_name)
@@ -583,6 +747,14 @@ class QAWorkflowRunner:
         self.record_video = record_video
         self.fixture_bootstrapper = fixture_bootstrapper
         self.planner = planner
+        self.sandbox_precreated = sandbox_precreated
+        self.port_publisher = port_publisher
+        self.guest_browser_visible = guest_browser_visible
+        self._browser_runtime = (
+            "celesto_cdp"
+            if (use_sandbox_browser or browser_cdp_url)
+            else "host_playwright"
+        )
         self.trace: list[LifecycleEvent] = []
         self.actions: list[ActionRecord] = []
         self.browser: BrowserSession | None = None
@@ -630,6 +802,8 @@ class QAWorkflowRunner:
         self._emit("fixture_bootstrap_start", self.state, "deploying target fixture in guest")
         self.fixture_bootstrapper(self.sandbox_name)
         self._emit("fixture_bootstrap_done", self.state, "target fixture healthy in guest")
+        if self.port_publisher is not None:
+            self.port_publisher(self.sandbox_name)
 
     def _last_observation(self) -> str:
         if self.actions:
@@ -685,15 +859,30 @@ class QAWorkflowRunner:
         error = ""
         success = False
         test_paths: list[str] = []
-        browser_runtime = (
-            "celesto_cdp"
-            if self.use_sandbox_browser or self.browser_cdp_url
-            else "host_playwright"
-        )
+        sandbox_creation_s = 0.0
+        deploy_s = 0.0
+        browser_start_s = 0.0
+        workflow_s = 0.0
+        cleanup_s = 0.0
+        workflow_started = 0.0
+        deploy_started = 0.0
+        deploy_completed = False
+        browser_started = 0.0
+        browser_completed = False
         try:
             self._step = 1
-            self._emit("step_start", "Created", "Creating isolated sandbox")
-            info = self.adapter.create(self.sandbox_name)
+            creation_started = time.monotonic()
+            if self.sandbox_precreated:
+                self._emit("step_start", "Created", "Attaching to pre-created sandbox")
+                info = self.adapter.get_info(self.sandbox_name)
+                if info is None:
+                    raise RuntimeError(
+                        f"pre-created sandbox {self.sandbox_name!r} not found in adapter"
+                    )
+            else:
+                self._emit("step_start", "Created", "Creating isolated sandbox")
+                info = self.adapter.create(self.sandbox_name)
+            sandbox_creation_s = round(time.monotonic() - creation_started, 2)
             self._boot_seconds = info.boot_to_ready_s
             self._emit("sandbox_created", "Created", f"provider={info.provider}")
             self.state = "Ready"
@@ -707,14 +896,24 @@ class QAWorkflowRunner:
             self.state = "Running"
             self._emit("state_transition", "Running", "sandbox is ready for browser work")
 
+            deploy_started = time.monotonic()
             self._bootstrap_fixture()
+            deploy_s = round(time.monotonic() - deploy_started, 2)
+            deploy_completed = True
+
+            browser_started = time.monotonic()
             self._open_browser()
+            browser_start_s = round(time.monotonic() - browser_started, 2)
+            browser_completed = True
+            workflow_started = time.monotonic()
 
             self._step = 3
             self._emit("step_start", "Running", "Navigating to target shop")
             entry = self._choose_action(
                 "enter-shop",
-                "Open the target shop's product listing page (the workflow starts there).",
+                f"Navigate to the shop's home page at {self.base_url}/shop/ - this is the "
+                "entry point; /shop/products and /shop/checkout are different pages and not "
+                "the target of this step.",
                 [
                     BrowserAction(
                         ActionType.NAVIGATE,
@@ -993,7 +1192,25 @@ class QAWorkflowRunner:
             self._emit("error", "Failed", error)
             self.state = "Failed"
         finally:
+            now = time.monotonic()
+            if deploy_started and not deploy_completed:
+                deploy_s = round(now - deploy_started, 2)
+            if browser_started and not browser_completed:
+                browser_start_s = round(now - browser_started, 2)
+            if workflow_started:
+                workflow_s = round(now - workflow_started, 2)
+            cleanup_started = now
             cleanup_ok = self._cleanup()
+            cleanup_s = round(time.monotonic() - cleanup_started, 2)
+        agent_wall_clock_s = round(time.monotonic() - started, 2)
+        accounted_total_s = round(
+            sandbox_creation_s
+            + deploy_s
+            + browser_start_s
+            + workflow_s
+            + cleanup_s,
+            2,
+        )
         return WorkflowOutcome(
             success=success,
             classification=classification,
@@ -1002,25 +1219,51 @@ class QAWorkflowRunner:
             trace=self.trace,
             actions=self.actions,
             sandbox_name=self.sandbox_name,
-            wall_clock_s=round(time.monotonic() - started, 2),
+            wall_clock_s=agent_wall_clock_s,
             boot_to_ready_s=self._boot_seconds,
             cleanup_ok=cleanup_ok,
             test_paths=test_paths,
             execution_mode=self.execution_mode,
-            browser_runtime=browser_runtime,
+            browser_runtime=self._browser_runtime,
             planner_mode="llm" if self.planner is not None else "scripted",
+            sandbox_creation_s=sandbox_creation_s,
+            deploy_s=deploy_s,
+            browser_start_s=browser_start_s,
+            workflow_s=workflow_s,
+            cleanup_s=cleanup_s,
+            agent_wall_clock_s=agent_wall_clock_s,
+            total_wall_clock_s=accounted_total_s,
+            end_to_end_wall_clock_s=agent_wall_clock_s,
         )
 
     def _open_browser(self) -> None:
         cdp_url = self.browser_cdp_url
         if self.use_sandbox_browser:
             cdp_url = self.adapter.get_browser_url(self.sandbox_name)
-            if not cdp_url:
+            if cdp_url:
+                self.browser_cdp_url = cdp_url
+                self._browser_runtime = "celesto_cdp"
+            elif isinstance(self.adapter, CelestoSandboxAdapter):
+                self._emit(
+                    "browser_runtime_selected",
+                    self.state,
+                    "platform CDP gateway unavailable on this sandbox; using in-guest "
+                    "Playwright over exec, so all browser work still runs inside the guest",
+                )
+                self.browser = GuestBrowserSession(
+                    self.adapter,
+                    self.sandbox_name,
+                    self.base_url,
+                    visible=self.guest_browser_visible,
+                )
+                self.browser.start()
+                self._browser_runtime = "guest_playwright_exec"
+                return
+            else:
                 raise RuntimeError(
                     "the live sandbox did not expose a CDP browser URL; refusing to "
                     "substitute a host browser for a live run"
                 )
-            self.browser_cdp_url = cdp_url
         if self.record_video and cdp_url:
             logger.warning("Video recording is only supported for the host-browser runtime")
         self.browser = BrowserSession(self.base_url, record_video=self.record_video)
@@ -1030,7 +1273,15 @@ class QAWorkflowRunner:
         if self.browser is None:
             raise RuntimeError("browser has not been started")
         coupon = code or self._coupon_code
-        before = self.browser.page.get_by_test_id("cart-total").get_attribute("data-value")
+        before = self._act(
+            BrowserAction(
+                ActionType.READ_ATTRIBUTE,
+                selector="[data-testid='cart-total']",
+                attribute="data-value",
+                description="Read total before coupon",
+            ),
+            required=False,
+        )
         fill = self._act(
             BrowserAction(
                 ActionType.FILL,
@@ -1052,12 +1303,51 @@ class QAWorkflowRunner:
         )
         if not click.success:
             return False
-        try:
-            self.browser.page.wait_for_load_state("domcontentloaded", timeout=7000)
-            after = self.browser.page.get_by_test_id("cart-total").get_attribute("data-value")
-        except Exception:
+        failure = self._act(
+            BrowserAction(
+                ActionType.EXISTS,
+                selector="[data-testid='failure-page']",
+                description="Detect the intentional checkout failure page",
+            ),
+            required=False,
+        )
+        if failure.success and failure.output.strip().lower() == "true":
             return False
-        if required and before == after:
+        after = self._act(
+            BrowserAction(
+                ActionType.READ_ATTRIBUTE,
+                selector="[data-testid='cart-total']",
+                attribute="data-value",
+                description="Read total after coupon",
+            ),
+            required=False,
+        )
+        if not after.success:
+            return False
+        if before.success and before.output == after.output:
+            self._act(
+                BrowserAction(
+                    ActionType.WAIT_ATTRIBUTE_CHANGE,
+                    selector="[data-testid='cart-total']",
+                    attribute="data-value",
+                    value=before.output,
+                    timeout_ms=2000,
+                    description="Wait for the checkout total to change",
+                ),
+                required=False,
+            )
+            after = self._act(
+                BrowserAction(
+                    ActionType.READ_ATTRIBUTE,
+                    selector="[data-testid='cart-total']",
+                    attribute="data-value",
+                    description="Read total after the condition wait",
+                ),
+                required=False,
+            )
+            if not after.success:
+                return False
+        if required and before.success and before.output == after.output:
             raise RuntimeError("coupon application did not change the rendered total")
         return True
 
@@ -1100,7 +1390,13 @@ class QAWorkflowRunner:
             reset_status = self.browser.fixture_post("/shop/api/reset")
             if reset_status != 200:
                 raise RuntimeError(f"fixture reset failed with HTTP {reset_status}")
-            self.browser.page.goto(f"{self.base_url}/shop/checkout", wait_until="domcontentloaded")
+            self._act(
+                BrowserAction(
+                    ActionType.NAVIGATE,
+                    value=f"{self.base_url}/shop/checkout",
+                    description="Reopen checkout on the fresh fixture",
+                )
+            )
         self.state = "Running"
         self._emit("state_transition", "Running", "fresh fixture ready; retrying step 7")
 
@@ -1132,9 +1428,8 @@ class QAWorkflowRunner:
     def save_trace(self, path: Path | None = None) -> Path:
         target = path or (REPORTS_DIR / "failure_trace.jsonl")
         target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("w", encoding="utf-8") as handle:
-            for event in self.trace:
-                handle.write(json.dumps(event.to_dict()) + "\n")
+        content = "".join(json.dumps(event.to_dict()) + "\n" for event in self.trace)
+        atomic_write_text(target, content)
         return target
 
 
@@ -1147,7 +1442,7 @@ def run_containment_test(adapter: SandboxAdapter, sandbox_name: str) -> dict[str
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     canary = EVIDENCE_DIR / f"host-canary-{secrets.token_hex(4)}.txt"
     token = secrets.token_hex(24)
-    canary.write_text(token, encoding="utf-8")
+    atomic_write_text(canary, token)
     before = _sha256(canary)
     attack_command = parse_prompt_injection(PROMPT_INJECTION_REVIEW) or "cat /etc/passwd"
     started = datetime.now(timezone.utc).isoformat()
@@ -1175,7 +1470,7 @@ def run_containment_test(adapter: SandboxAdapter, sandbox_name: str) -> dict[str
         f"credential_content_absent={str(payload_not_leaked).lower()}",
         f"[{datetime.now(timezone.utc).isoformat()}] containment test complete",
     ]
-    log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(log_path, "\n".join(lines) + "\n")
     return {
         "attack": "prompt_injection_exfil",
         "blocked": blocked,

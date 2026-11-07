@@ -1,21 +1,30 @@
 {
-  "generated_at": "2026-10-24T16:49:16.091410+00:00",
+  "generated_at": "2026-11-07T12:48:55.320480+00:00",
   "execution_mode": "mock",
   "target_url": "http://127.0.0.1:8090",
   "python": "3.11.0",
-  "platform": "Windows-10-10.0.26200-SP0",
-  "celesto_api_key_configured": false,
+  "platform": "Windows-10-10.0.26300-SP0",
+  "celesto_api_key_configured": true,
   "celesto_sdk_importable": false,
   "celesto_import_error": "ModuleNotFoundError: No module named 'celesto'",
+  "guest_browser_visible_requested": false,
   "playwright_python": true,
   "node": "v22.16.0",
   "npx_playwright": "Version 1.64.1",
   "node_playwright_specs": "tests\\generated",
   "source_files": {
-    "app/sandbox_runner.py": "70ce290d2e8e6d3693fc9db24645c90d26bb8aa2f7e598f3f2f853ab756fd276",
-    "app/qa_agent.py": "e5a4a73299dc0585179065c67901c36d1b65d163b8dd110a773253704b72faf1",
+    "app/sandbox_runner.py": "d76509929526033179c5e7b23bfc978b1cfae8fbb7f406790663ce3554d291ed",
+    "app/qa_agent.py": "3df1d72bbbe5d6dcc41b7a87285d7deb360316ce941f6cd8bd84c4f74c75e534",
+    "app/ownership.py": "c41204d87a22c8529a436a2dc379da2bdab02a2c6e1593ae73fafd6442bbf679",
+    "app/evidence_io.py": "0febf1005c8484ee18f92207311680eff3d1e20190585c0f3b7f6a0826b35231",
+    "app/report_schemas.py": "26f8bf74fcfd7541d2cdc93594d83df6d3815df949c8e1623a53f3fa8e4801dc",
+    "app/guest_browser_launcher.py": "6aa742c85298e35957db4ac71f9124e91572324b678535a49df2a15a23668b1f",
+    "app/guest_browser_worker.py": "ffa1876b555bfe4cfb36d23e02aabba30543628635ee1bcb75bda1377d3ef874",
+    "app/guest_healthcheck.py": "6d67b4031ffb28b3cf7f9c3e79e857e0e66aae76047cf8e335d721b611cdcf83",
     "app/main.py": "8de5d61229b950191f5c92fe129077b53ee96a999aad35f2870006a0ff4b60b8",
     "app/target_saas_app.py": "27a4d99c9cfc284565c588e1897aa5a0716e352cbf06f67fa12248fcab1d0921",
-    "playwright.config.ts": "33a2a1067c209d5f356d8211cd56ad2aaf9b24dfe19d109dbf0f38372ada1a06"
+    "playwright.config.ts": "33a2a1067c209d5f356d8211cd56ad2aaf9b24dfe19d109dbf0f38372ada1a06",
+    "scripts/run_live_demo.py": "c210e4e19b3d64e8b1ba7684fe88f007de0662dee005e4861475076adfc6f128",
+    "scripts/verify_submission.py": "fe2b310e4d6de4c5b98a17ea362c4bf2ba3cffbafe50ab3715c613eebd400e5d"
   }
 }

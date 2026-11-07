@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
+from app.evidence_io import atomic_write_bytes, atomic_write_json
 from app.qa_agent import QAWorkflowRunner, generate_sandbox_name
 from app.sandbox_runner import SecurityPolicy, create_adapter
 
@@ -34,15 +35,33 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def build_sandbox_probe(base_url: str) -> str:
+def visible_guest_browser_default() -> bool:
+    value = os.getenv("FLOWSCOUT_VISIBLE_BROWSER", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def build_sandbox_probe(base_url: str, *, visible: bool = True) -> str:
+    headless_literal = "False" if visible else "True"
     return f'''import json
+import os
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 URL = {json.dumps(base_url.rstrip("/") + "/shop/")}
 SCREENSHOT = "/workspace/flowscout/live-smoke.png"
+HEADLESS = {headless_literal}
+
+if not HEADLESS and not os.getenv("DISPLAY"):
+    for socket in sorted(Path("/tmp/.X11-unix").glob("X*")):
+        suffix = socket.name[1:]
+        if suffix.isdigit():
+            os.environ["DISPLAY"] = ":" + suffix
+            break
+if not HEADLESS and not os.getenv("DISPLAY"):
+    HEADLESS = True
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
+    browser = p.chromium.launch(headless=HEADLESS, args=["--disable-dev-shm-usage"])
     try:
         page = browser.new_page(viewport={{"width": 1280, "height": 900}})
         response = page.goto(URL, wait_until="domcontentloaded", timeout=30000)
@@ -60,6 +79,8 @@ with sync_playwright() as p:
             "product": product,
             "url": page.url,
             "screenshot": SCREENSHOT,
+            "headless": HEADLESS,
+            "display": os.getenv("DISPLAY", ""),
         }}
         print("LIVE_SMOKE_RESULT=" + json.dumps(result))
         if result["status"] != 200 or shop_title != "ShopDemo" or "Widget Pro" not in product:
@@ -91,7 +112,7 @@ def result_payload(result) -> dict | None:
     }
 
 
-def run_sandbox_smoke(base_url: str, timeout: int) -> tuple[dict, int]:
+def run_sandbox_smoke(base_url: str, timeout: int, *, visible: bool = True) -> tuple[dict, int]:
     SCREENSHOT_PATH.unlink(missing_ok=True)
     adapter = None
     info = None
@@ -111,7 +132,7 @@ def run_sandbox_smoke(base_url: str, timeout: int) -> tuple[dict, int]:
         write_result = adapter.write_text(
             sandbox_name,
             "/workspace/flowscout/live_smoke.py",
-            build_sandbox_probe(base_url),
+            build_sandbox_probe(base_url, visible=visible),
         )
         if not write_result.ok:
             raise RuntimeError(f"probe write failed: {write_result.stderr or write_result.stdout}")
@@ -126,7 +147,7 @@ def run_sandbox_smoke(base_url: str, timeout: int) -> tuple[dict, int]:
             screenshot = adapter.read_workspace_base64(
                 sandbox_name, "/workspace/flowscout/live-smoke.png"
             )
-            SCREENSHOT_PATH.write_bytes(screenshot)
+            atomic_write_bytes(SCREENSHOT_PATH, screenshot)
     except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
         if "HTTP 429" in failure:
@@ -186,12 +207,19 @@ def run_sandbox_smoke(base_url: str, timeout: int) -> tuple[dict, int]:
         },
         "cleanup_ok": cleanup.ok if cleanup is not None else info is None,
         "cleanup_message": cleanup.message if cleanup is not None else "no sandbox created",
+        "requested_guest_browser_visible": visible,
         "failure": failure,
     }
     return payload, 0 if verified else 1
 
 
-def run_cdp_workflow(base_url: str, timeout: int, inject_failure: bool) -> tuple[dict, int]:
+def run_cdp_workflow(
+    base_url: str,
+    timeout: int,
+    inject_failure: bool,
+    *,
+    visible: bool = True,
+) -> tuple[dict, int]:
     adapter = None
     outcome = None
     failure = ""
@@ -207,6 +235,7 @@ def run_cdp_workflow(base_url: str, timeout: int, inject_failure: bool) -> tuple
             execution_mode="live",
             record_video=False,
             use_sandbox_browser=True,
+            guest_browser_visible=visible,
         )
         outcome = runner.run(inject_failure=inject_failure)
         runner.save_trace(LIVE_EVIDENCE_DIR / "live-failure-trace.jsonl")
@@ -242,6 +271,7 @@ def run_cdp_workflow(base_url: str, timeout: int, inject_failure: bool) -> tuple
         "inject_failure": inject_failure,
         "sandbox_names": [sandbox_name],
         "outcome": outcome.to_dict() if outcome is not None else None,
+        "requested_guest_browser_visible": visible,
         "failure": failure,
         "timeout_s": timeout,
     }
@@ -254,7 +284,13 @@ def main() -> int:
     parser.add_argument("--mode", choices=("sandbox", "cdp"), default="sandbox")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--inject-failure", action="store_true")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="run the live guest Chromium headless instead of on the sandbox desktop",
+    )
     args = parser.parse_args()
+    visible = visible_guest_browser_default() and not args.headless
 
     base_url = args.base_url.rstrip("/")
     decision = SecurityPolicy().check_target_url(base_url)
@@ -267,12 +303,17 @@ def main() -> int:
 
     LIVE_EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     if args.mode == "cdp":
-        payload, code = run_cdp_workflow(base_url, args.timeout, args.inject_failure)
+        payload, code = run_cdp_workflow(
+            base_url,
+            args.timeout,
+            args.inject_failure,
+            visible=visible,
+        )
         evidence_path = LIVE_EVIDENCE_DIR / "live-cdp-smoke.json"
     else:
-        payload, code = run_sandbox_smoke(base_url, args.timeout)
+        payload, code = run_sandbox_smoke(base_url, args.timeout, visible=visible)
         evidence_path = LIVE_EVIDENCE_DIR / "live-smoke.json"
-    evidence_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    atomic_write_json(evidence_path, payload)
     print(json.dumps(payload, indent=2))
     return code
 

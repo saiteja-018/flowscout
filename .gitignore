@@ -55,5 +55,8 @@ logs/target-server.log
 logs/*.log
 !logs/commands.jsonl
 
+# Local ownership registry (machine state; never commit)
+logs/ownership/
+
 # ZCode session artifacts
 .zcode/

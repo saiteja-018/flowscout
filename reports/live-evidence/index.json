@@ -1,0 +1,58 @@
+{
+  "generated_at": "2026-11-06T20:09:07.184823+00:00",
+  "purpose": "Canonical index for live evidence. Only the current entry is presented as verification; historical failures and quarantined stale failures are kept for audit.",
+  "current": {
+    "path": "reports/live-evidence/live-visible-guest-2026-11-05.json",
+    "status": "verified",
+    "live_guest_browser_verified": true,
+    "live_celesto_cdp_verified": false,
+    "note": "Single-sandbox live workflow, not the 20-run benchmark. The platform CDP gateway returned HTTP 501, so the verified browser path is the in-guest Playwright browser on the sandbox desktop."
+  },
+  "historical": [
+    {
+      "path": "reports/live-evidence/live-cdp-501.json",
+      "status": "historical_failure",
+      "live_celesto_verified": false,
+      "failure": "HTTP 501: Interactive connections are not available for this computer yet",
+      "note": "Historical CDP attempt kept to document the platform limitation; it is not current verification."
+    },
+    {
+      "path": "reports/live-evidence/keepalive-20261105T145028Z.json",
+      "status": "retained",
+      "note": "Retained live sandbox kept for manual review; protected by CELESTO_KEEP_COMPUTER_IDS and not a verification run."
+    }
+  ],
+  "quarantined": [
+    {
+      "path": "reports/live-evidence/quarantine/live-smoke.json",
+      "status": "stale_failure",
+      "live_celesto_verified": false,
+      "failure": "CloudAPIError: Cloud API returned HTTP 429 (free-trial create limit)",
+      "note": "Stale free-trial create-limit failure. Moved out of the live-evidence root so it cannot be mistaken for current success."
+    },
+    {
+      "path": "reports/live-evidence/quarantine/live-smoke-429.json",
+      "status": "stale_failure",
+      "live_celesto_verified": false,
+      "failure": "CloudAPIError: Cloud API returned HTTP 429 (free-trial create limit)",
+      "note": "Duplicate stale 429 evidence from the same free-trial limit window."
+    },
+    {
+      "path": "reports/live-evidence/quarantine/live-smoke-429-1802.json",
+      "status": "stale_failure",
+      "live_celesto_verified": false,
+      "failure": "CloudAPIError: Cloud API returned HTTP 429 (free-trial create limit)",
+      "note": "Duplicate stale 429 evidence from the same free-trial limit window."
+    },
+    {
+      "path": "reports/live-evidence/quarantine/published-port.json",
+      "status": "quarantined",
+      "note": "Older published-port artifact from a prior live run; not current evidence."
+    },
+    {
+      "path": "reports/live-evidence/quarantine/host-canary-7dbd3b6a.txt",
+      "status": "quarantined",
+      "note": "Old containment canary from a prior live run; retained for audit only."
+    }
+  ]
+}

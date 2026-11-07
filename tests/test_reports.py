@@ -177,7 +177,20 @@ def test_reliability_mode_is_honest() -> None:
     report = load("reliability.json")
     mode = report["evaluation_mode"]
     assert mode in {"mock", "live"}
-    assert report["live_celesto_verified"] is (mode == "live")
+    expected_verified = bool(
+        mode == "live"
+        and report["runs"]
+        and all(
+            run.get("success")
+            and run.get("browser_verified")
+            and run.get("cleanup_ok")
+            for run in report["runs"]
+        )
+    )
+    assert report["live_celesto_verified"] is expected_verified
+    if mode == "live":
+        assert report["browser_runtimes"]
+        assert all(run["browser_runtime"] for run in report["runs"])
     if mode == "mock":
         assert all(run["cost_usd"] == 0.0 for run in report["runs"])
         assert all(run["boot_to_ready_s"] == 0.0 for run in report["runs"])
@@ -266,10 +279,13 @@ def test_walkthrough_video_is_real_and_nonempty() -> None:
 
 
 def test_postmortem_documents_truth_boundary() -> None:
+    reliability = load("reliability.json")
     text = (REPORTS / "postmortem.md").read_text(encoding="utf-8")
-    assert f"Evaluation mode: {load('reliability.json')['evaluation_mode']}" in text
+    assert f"Evaluation mode: {reliability['evaluation_mode']}" in text
     assert "Controlled step-7 failure" in text
     assert "concurrency" in text.lower()
+    if reliability["evaluation_mode"] == "mock":
+        assert "live 20-run benchmark was not attempted" in text
     assert len(text) >= 200
 
 
@@ -319,4 +335,6 @@ def test_lifecycle_probe_evidence() -> None:
 def test_runs_are_not_overclaimed() -> None:
     reliability = load("reliability.json")
     if reliability["evaluation_mode"] == "mock":
-        assert reliability["note"].startswith("Twenty deterministic evaluation runs")
+        assert reliability["note"].startswith(
+            f"{reliability['run_count']} deterministic evaluation runs"
+        )

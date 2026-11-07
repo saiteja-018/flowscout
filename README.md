@@ -42,7 +42,7 @@ not hidden behind a terminal transcript.
                          | the host (mock/matrix)      |
                          +--------------+--------------+
                                         ^  http://127.0.0.1:8090 (in-guest)
-                                        |  Celesto CDP browser (live)
+                                        |  Celesto guest Chromium (live)
 +------------------+       +------------+-------------+
 | QA workflow      |------>| BrowserSession           |
 | 10 validated     |       | stable data-testid flows |
@@ -82,9 +82,16 @@ The implementation is split into small modules:
   cleanup.
 - `app/qa_agent.py` - validated browser actions, ten-step workflow, planner
   decision points, recovery, generated TypeScript tests, containment probe,
-  host test matrix.
+  host test matrix, phase timing.
 - `app/llm_planner.py` - the optional LLM planner: OpenAI-compatible endpoint,
   strict JSON choice contract, one corrective re-ask, JSONL evidence log.
+- `app/ownership.py` - fail-closed local ownership registry, atomic registry
+  writes, scoped orphan-candidate selection, protected keep IDs.
+- `app/evidence_io.py` - atomic report, trace, manifest, screenshot, and spec
+  writes (same-directory temporary file plus `os.replace`).
+- `app/report_schemas.py` - pydantic report schemas plus cross-file
+  `verify_submission()` checks for hashes, trace events, arithmetic, and live
+  evidence truthfulness.
 - `app/guest_healthcheck.py` - stdlib-only health probe uploaded into guests.
 - `app/main.py` - API, PostgreSQL ledger, degraded reads, write rejection,
   dashboard, static evidence.
@@ -101,20 +108,24 @@ requires one (`resource_overrides_unavailable` -> choose a named size). SDK
 importability is still recorded honestly in
 `reports/evidence/runtime-manifest.json`.
 
-**Browser runtime (CDP).** In live runs the workflow's entire browser surface is
-the sandbox's own Chromium: `POST /v1/computers/{id}/browser` returns a gateway
-that Playwright connects to with `connect_over_cdp`. Pages, screenshots, and the
-poisoned review are rendered inside the guest, never on the host. If the
-sandbox does not expose a CDP URL, the run fails closed; a host browser is never
-substituted (tested).
+**Browser runtime.** In live runs the workflow's entire browser surface is the
+sandbox's own Chromium. When `POST /v1/computers/{id}/browser` returns a
+gateway, Playwright connects over CDP. When the platform gateway is unavailable
+(for example, HTTP 501 on the free Micro trial), the run falls back to the
+guest's own Playwright over exec. Both paths render pages, screenshots, and the
+poisoned review inside the guest, never on the host; a host browser is never
+substituted (tested). The guest Chromium runs headed on the sandbox desktop by
+default so a live run is observable. Set `FLOWSCOUT_VISIBLE_BROWSER=0` or pass
+`--headless` for headless mode; if no X display is available, the launcher logs
+a warning and falls back to headless.
 
 **In-guest fixture.** Live runs deploy ShopDemo *inside* each sandbox: the app
 file is uploaded in base64 chunks through the audited command path, dependencies
 are installed by one exact-match policy exception (`pip install --quiet fastapi
-uvicorn`, never prefix-matched), the server starts under `nohup`, and a
-stdlib-only health probe confirms it before any browser step. The CDP browser
-then visits `http://127.0.0.1:8090` in the same guest - no host service and no
-public tunnel is involved.
+uvicorn python-multipart`, never prefix-matched), the server starts under
+`nohup`, and a stdlib-only health probe confirms it before any browser step.
+The guest Chromium then visits `http://127.0.0.1:8090` in the same guest - no
+host service and no public tunnel is involved.
 
 **Safety hooks.** The celesto Cloud SDK exposes no command callbacks, so
 FlowScout enforces a deny-by-default allowlist in the control-plane adapter
@@ -133,6 +144,25 @@ failure, and interrupt, idempotent delete, and a failed-create cleanup path so a
 half-created billable sandbox cannot leak. Nothing is shelled out on the host as
 a tool implementation.
 
+**Ownership and orphan reclamation.** Celesto's documented create API has no
+metadata, labels, or caller-supplied name, so FlowScout records every computer
+it creates in a local, gitignored registry at
+`logs/ownership/registry.json` before the computer reaches `running`. Deletes
+update the same record with the cloud confirmation. The registry is the
+authoritative ownership signal; the dedicated `browser-agent` template is
+recorded on each entry as a second signal, not as a cloud-side label. A missing
+or corrupt registry fails closed: reclamation selects no candidates, and an
+unregistered cloud computer is never touched. Automatic reclamation defaults to
+`off` (`CELESTO_AUTO_RECLAIM=off`); `dry-run` and `apply` are explicit opt-ins,
+the minimum age defaults to one hour, and `CELESTO_KEEP_COMPUTER_IDS` is always
+protected. The CLI is dry-run by default and requires both `--apply` and
+`--yes` before deleting a listed candidate:
+
+```powershell
+python scripts\reclaim_orphans.py
+python scripts\reclaim_orphans.py --apply --yes --min-age-s 3600
+```
+
 Live mode is fail-closed:
 
 ```text
@@ -144,12 +174,18 @@ requires a real `CELESTO_API_KEY`; otherwise `create_adapter("live")` raises
 
 **Live status:** the adapter, REST client (including 429 retry with
 `Retry-After`), in-guest deploy pattern (nohup + healthcheck), and backgrounded
-servers were verified against real Celesto sandboxes from this repository. The
-browser-agent template's CDP endpoint requires a non-trial size: on the free
-Micro trial `POST .../browser` returns HTTP 501 (recorded in
-`reports/live-evidence/`); with account credit the `standard` size unlocks it.
-`live_celesto_verified` in `reports/reliability.json` is true only when the
-recorded evaluation itself ran live.
+servers were verified against real Celesto sandboxes from this repository. On
+the free Micro trial, `POST .../browser` returns HTTP 501 (indexed as a
+historical failure in `reports/live-evidence/index.json`), so live browser work
+falls back to the guest's Playwright over exec. A single-sandbox run on
+2026-11-05 verified that fallback with a headed Chromium on display `:99`; the
+CDP gateway on a paid `standard` size is expected to work but is not yet
+verified from this repository. `live_celesto_verified` in
+`reports/reliability.json` reflects the evaluation mode; the separate
+`reports/live-evidence/` index distinguishes current verification, historical
+attempts, and quarantined stale failures. The stale free-trial 429 records are
+under `reports/live-evidence/quarantine/` and are never presented as current
+success.
 
 ## The planner: scripted or LLM
 
@@ -164,11 +200,15 @@ The workflow has two interchangeable loops:
   `{"choice": <index>, "reason": "..."}`; anything else gets one corrective
   re-ask and then fails the run. The LLM cannot enlarge the action space, so
   untrusted page content in the observation can at worst cause a wrong pick and
-  an honest failure - never command execution. Every proposal is logged to
-  `reports/evidence/planner.jsonl` and traced as `planner_decision` events.
+  an honest failure - never command execution. When enabled, every proposal is
+  logged to `reports/evidence/planner.jsonl` and traced as `planner_decision`
+  events.
 
 Planner mode without complete `LLM_*` configuration raises immediately; it never
-falls back to the scripted loop and reports LLM numbers.
+falls back to the scripted loop and reports LLM numbers. The recorded 20-run
+benchmark uses the scripted planner. An LLM-planner benchmark was attempted, but
+the configured endpoint's 30 requests/minute limit produced HTTP 429 planner
+errors from run 10 onward; that run is not presented as benchmark evidence.
 
 ## Eval report
 
@@ -180,20 +220,43 @@ below; this table is refreshed whenever the evidence is regenerated.
 
 | Metric | Recorded value |
 |---|---:|
-| Evaluation mode | mock sandbox / host Playwright / llm planner |
+| Evaluation mode | mock sandbox / host Playwright / scripted planner |
 | Runs | 20 |
 | Success rate | 100% |
-| Median wall clock | 1.92 s |
-| P90 wall clock | 2.70 s |
+| Median agent wall clock | 2.730 s |
+| P90 agent wall clock | 2.880 s |
+| Median sandbox creation | 0.000 s (mock lifecycle) |
+| Median deploy | 0.000 s (mock lifecycle) |
+| Median browser start | 0.860 s |
+| Median workflow | 1.760 s |
+| Median cleanup | 0.110 s |
+| Median total lifecycle (phase sum) | 2.735 s |
+| Median end-to-end | 2.730 s |
 | Median boot-to-ready | 0.00 s (mock lifecycle) |
 | Live Celesto CDP verified | false (HTTP 501 on free Micro) |
 | Recorded cloud cost | $0.00 |
 
-Mock-mode timings measure orchestration, the planner loop, and a real local
-Chromium session - not Celesto boot time, network latency, or cloud cost. In
-mock mode boot time is recorded as `0.0` rather than invented, and cost as
+Mock-mode timings measure orchestration, the scripted workflow loop, and a real
+local Chromium session - not Celesto boot time, network latency, or cloud cost.
+In mock mode boot time is recorded as `0.0` rather than invented, and cost as
 `$0.00` with an explicit methodology note. Live runs are costed from wall-clock
 time at the `standard` size rate (`$0.03/hr`).
+
+Each run row separates `sandbox_creation_s`, `deploy_s`, `browser_start_s`,
+`workflow_s`, and `cleanup_s`. `agent_wall_clock_s` is the agent lifecycle
+clock; `wall_clock_s` is retained as its legacy alias. `total_wall_clock_s` is
+the sum of the five phases, while `end_to_end_wall_clock_s` is the row's full
+elapsed time and can include setup or queue overhead. In live mode sandbox
+creation is deliberately outside the agent clock because Celesto quota waits
+are infrastructure time, not agent work. Cost fields name their basis:
+`cost_usd` uses the agent clock, `cost_including_creation_usd` uses the total
+clock, and `cost_source`/`rate_usd_per_hour` state whether the row is
+`mock_zero_cost` or a live Celesto size rate.
+
+A separate single-sandbox live check on 2026-11-05 verified the visible
+guest-Chromium fallback on Micro (`Chrome/151.0.7922.34`, display `:99`) and
+confirmed the same SAVE20 stacking defect. It is not a 20-run benchmark; the
+record is `reports/live-evidence/live-visible-guest-2026-11-05.json`.
 
 The four-case generated-test matrix is the important correctness result:
 
@@ -206,6 +269,39 @@ The four-case generated-test matrix is the important correctness result:
 
 Evidence: `reports/evidence/test-matrix.json`. The reproduction proves the
 defect exists; the regression proves the fix protects it.
+
+### Evidence integrity and verification
+
+Every report, postmortem, trace, runtime manifest, live-smoke record, generated
+spec, and screenshot is written through `app/evidence_io.py`: a same-directory
+temporary file is flushed and `os.replace`d over the destination, so a crash
+cannot leave a half-written JSON document that looks like evidence. The demo
+also wraps a run in an artifact transaction. `prepare_artifacts()` backs up the
+generated artifacts (reports, evidence, video, command log, specs, and test
+output); `commit_artifacts()` runs the independent verifier before discarding
+that backup. If verification fails, the pre-run artifacts are restored and the
+run raises `ReportVerificationError` instead of replacing a known-good report
+set.
+
+Run the verifier directly with:
+
+```powershell
+python scripts\verify_submission.py
+```
+
+It validates report schemas and arithmetic (including phase timing sums and
+cost clocks), required evidence paths and hashes, command-policy audit rows,
+the step-7 failure/recovery trace, the four-case test matrix, runtime source
+hashes, the live-evidence index and quarantine, and a secret scan. It also
+cross-checks `evaluation_mode`, `live_celesto_verified`, and the browser/cost
+claims against the actual run rows.
+
+`reports/live-evidence/index.json` is the canonical live-evidence index. Its
+`current` entry is the single-sandbox 2026-11-05 visible guest-browser run; the
+CDP 501 attempt and retained-sandbox record are historical; the stale
+free-trial 429 artifacts are quarantined under
+`reports/live-evidence/quarantine/`. Quarantined records are retained for audit
+but are never presented as current verification.
 
 ### Verified lifecycle behavior
 
@@ -324,13 +420,17 @@ npm ci
 npx playwright install chromium
 python scripts\run_live_demo.py --mode mock --runs 20            # scripted
 python scripts\run_live_demo.py --mode mock --runs 20 --planner llm   # LLM loop
+python scripts\verify_submission.py
 ```
 
 The demo starts ShopDemo on `127.0.0.1:8090`, runs the cleanup probes, records
 the primary workflow and MP4, executes the four-case test matrix, runs 20
 evaluation iterations, and regenerates the reports under `reports/` and
-`reports/evidence/`. A scripted run takes roughly two minutes; the planner adds
-LLM latency per decision.
+`reports/evidence/`. A full scripted demo completes in about two minutes on this
+host; each evaluation run takes about 2.7 seconds, and the primary workflow plus
+test matrix add the rest. The LLM planner adds latency per decision. The demo
+verifies the new tree before committing it, and `verify_submission.py` can be
+run separately afterward.
 
 ### Live Celesto run
 
@@ -340,12 +440,17 @@ $env:CELESTO_MODE = "live"
 python scripts\run_live_demo.py --mode live --runs 20 --planner llm
 ```
 
-Each run creates a fresh `standard` / `browser-agent` sandbox, deploys the
-fixture in-guest, drives the CDP browser, and deletes the sandbox in `finally`.
-429 responses are retried with `Retry-After` and exponential backoff. The free
-trial is limited to one Micro sandbox (no browser runtime), so live browser runs
-require account credit; runtime cost at `$0.03/hr` is well under $1 for a
-20-run evaluation. Never reuse mock numbers as live results.
+Each run creates a fresh sandbox at the configured `CELESTO_SIZE_ID`
+(`standard` by default) using the `browser-agent` template, deploys the fixture
+in-guest, drives the guest Chromium (platform CDP when available,
+otherwise in-guest Playwright), and deletes the sandbox in `finally`. The guest
+Chromium runs headed on the sandbox desktop by default; pass `--headless` or set
+`FLOWSCOUT_VISIBLE_BROWSER=0` to run it headless. 429 responses are retried
+with `Retry-After` and exponential backoff. The free trial allows two Micro
+sandboxes per hour; the platform CDP gateway returns HTTP 501 on Micro, so the
+in-guest Playwright fallback is used there. With account credit, the `standard`
+size unlocks the CDP gateway. Runtime cost at the configured size rate is well
+under $1 for a 20-run evaluation. Never reuse mock numbers as live results.
 
 ### Tests
 
@@ -353,13 +458,16 @@ require account credit; runtime cost at `$0.03/hr` is well under $1 for a
 python -m pytest -q
 ```
 
-Current suite: **104 passing tests**. It covers API contracts, degraded reads,
+Current suite: **162 passing tests**. It covers API contracts, degraded reads,
 ledger write rejection, target fixture behavior, coupon arithmetic, selector
 and URL validation, command policy (including the exact-match deploy exception
 and chunked upload redirection), REST client behaviour against a scripted
 backend (429 retry, CDP warm-up, publish/delete), planner contract and
-injection resistance, mock honesty, live fail-closed behaviour, generated
-specs, cleanup on failure/interrupt, and report/evidence consistency.
+injection resistance, mock honesty, live fail-closed behaviour, live browser
+verification semantics, artifact rollback on failed runs, generated specs,
+cleanup on failure/interrupt, ownership-registry fail-closed and scoped-reclaim
+behaviour, atomic evidence writes, report schemas and verifier arithmetic,
+runtime source hashes, and live-evidence index/quarantine consistency.
 
 Run one generated test manually:
 
@@ -423,15 +531,21 @@ PostgreSQL is stopped. If host port 8080 is in use, set `API_PORT=18080`.
 app/main.py                 API, ledgers, dashboard
 app/qa_agent.py             browser workflow, planner hooks, specs, containment
 app/llm_planner.py          optional LLM planner (candidate-set contract)
+app/ownership.py            local ownership registry, scoped reclaim policy
+app/evidence_io.py          atomic report/evidence writes
+app/report_schemas.py       report schemas + cross-file verifier
 app/sandbox_runner.py       policy, audit log, REST cloud client, adapters
 app/target_saas_app.py      deterministic ShopDemo fixture (+ --serve guest mode)
 app/guest_healthcheck.py    in-guest fixture health probe
 scripts/run_live_demo.py    evidence/evaluation orchestrator
 scripts/run_live_smoke.py   live sandbox browser smoke
+scripts/reclaim_orphans.py  dry-run-first owned-orphan reclaimer
+scripts/verify_submission.py report/evidence verifier CLI
 tests/                      API, target, sandbox, REST client, planner, QA, reports
 tests/generated/            generated reproduction and regression specs
 reports/                    required reports and evidence
 logs/commands.jsonl         append-only command audit records
+logs/ownership/registry.json local owned-computer registry (gitignored)
 demo/walkthrough.mp4        real browser recording of the workflow
 seeds/01_runs.sql           PostgreSQL seed
 ```
@@ -442,21 +556,24 @@ Key evidence:
 - `logs/commands.jsonl` - every command attempt, including blocks.
 - `reports/failure_trace.jsonl` - lifecycle, controlled failure, recovery.
 - `reports/evidence/test-matrix.json` - four-case generated test proof.
-- `reports/evidence/planner.jsonl` - every LLM proposal, accepted or rejected.
-- `reports/live-evidence/` - earlier live probes (boot timing, CDP 501, 429).
+- `reports/evidence/runtime-manifest.json` - source hashes and runtime boundary.
+- `reports/live-evidence/index.json` - current, historical, and quarantined live
+  evidence; the 2026-11-05 single-sandbox visible guest-browser run is current.
 
 ## Tradeoffs and limitations
 
 - **The recorded evaluation in this snapshot is mock.** `reports/reliability.json`
   records `evaluation_mode` explicitly; the live run replaces those numbers with
-  real boot, wall-clock, and cost figures. Earlier live probes (real boot
-  timing, the CDP 501, trial 429s) are preserved under `reports/live-evidence/`.
+  real boot, wall-clock, and cost figures. Live probes (real boot timing, the
+  CDP 501, trial 429s, and the 2026-11-05 visible guest-browser run) are
+  preserved under `reports/live-evidence/` and classified by
+  `reports/live-evidence/index.json`; stale 429 records are quarantined.
 - **The planner is bounded.** The LLM chooses among validated candidates at
   fixed decision points rather than free-form browsing. This keeps untrusted
   page content structurally unable to become code, at the cost of exploration
   breadth.
 - **One exact-match install exception.** Deploying the in-guest fixture needs
-  `pip install --quiet fastapi uvicorn`. The policy allowlists that precise
+  `pip install --quiet fastapi uvicorn python-multipart`. The policy allowlists that precise
   string (checked before deny patterns, never prefix-matched); every attempt is
   audited like any other command.
 - **No snapshot rollback.** Recovery uses a fresh replacement sandbox. This is
@@ -497,7 +614,8 @@ non-claim, not a capacity plan.
 This implementation was built with an AI coding assistant and verified with
 executable tests, a real browser, and independent file hashes. The assistant
 used a Celesto trial API key for live REST probes (sandbox create/exec/delete,
-backgrounded servers, the CDP 501 on Micro); it did not fabricate live
-telemetry, cloud failures, video, or cost figures. The mock/live boundary is
+backgrounded servers, the CDP 501 on Micro, and a single headed guest-Chromium
+workflow); it did not fabricate live telemetry, cloud failures, video, or cost
+figures. The mock/live boundary is
 recorded in the runtime manifest, dashboard badge, reliability report, and
 postmortem.
