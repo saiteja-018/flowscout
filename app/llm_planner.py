@@ -227,7 +227,7 @@ class LLMPlanner:
     def _log(self, proposal: PlannerProposal) -> None:
         try:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
-            with self.log_path.open("a", encoding="utf-8") as handle:
+            with self.log_path.open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write(json.dumps(proposal.to_dict(), ensure_ascii=False) + "\n")
         except Exception:
             pass

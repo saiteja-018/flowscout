@@ -122,8 +122,8 @@
   "evidence": {
     "actions_log": {
       "path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/evidence/actions.jsonl",
-      "sha256": "7b02f0e59a257c4a40338a017a424a7be0560864883bd15bb3611a4f13e97070",
-      "bytes": 11428,
+      "sha256": "a72338de64eae799a32460c1ae52d99f16bebb4ea008fa217264e192f1b84690",
+      "bytes": 11378,
       "rows": 50,
       "note": "Live action log spanning the failed sandbox sbx-5iqkdrtal0rs and replacement sbx-8iwumuzpidlv."
     },
@@ -145,8 +145,8 @@
     ],
     "command_log": {
       "path": "reports/live-evidence/runs/live-recovery-20261107T152529Z/commands.jsonl",
-      "sha256": "624e674c1e493cb8eb7ee015e486b2791da17b87ca695c8890fb8db2de40bef4",
-      "bytes": 24268,
+      "sha256": "ec6727606574cf7a5b1d197fafbab14c102d3a60058e21430a48823e7d6259d8",
+      "bytes": 24179,
       "rows": 89,
       "note": "Live command audit for both sandboxes in the recovery run."
     }

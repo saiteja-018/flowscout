@@ -50,8 +50,8 @@
   "evidence": {
     "actions_log": {
       "path": "reports/live-evidence/live-visible-actions.jsonl",
-      "sha256": "5ead90940f330489f2c8cec891abbb5e7dab159f0617ce3743e7dba37d108637",
-      "bytes": 9063,
+      "sha256": "09393d55573e3369c1ab5e1c7782820c8dbb569f3bad271ab3cd5eb7019b08e3",
+      "bytes": 9023,
       "rows": 40,
       "note": "Live-only extract from the shared action log; rows span 2026-11-05T12:09:23Z to 12:10:47Z."
     },
@@ -73,8 +73,8 @@
     ],
     "command_log": {
       "path": "reports/live-evidence/live-visible-commands.jsonl",
-      "sha256": "6855ae42453e3f332bf57299b82811c48c59650c2069cab5ba63be97794a70a3",
-      "bytes": 16768,
+      "sha256": "c613abbf4a5e7de44c1923c0b70f6e6c3664c6c53616b3f9fd36518a89d403dd",
+      "bytes": 16706,
       "rows": 62,
       "note": "Live-only extract for sandbox sbx-iup80b8jl3dd. All live audit rows are preserved in reports/live-evidence/live-commands-archive.jsonl."
     }

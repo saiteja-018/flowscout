@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.report_schemas import (
+    ConcurrencyReport,
     LiveEvidenceIndex,
     ReliabilityReport,
     WorkflowOutcomeSchema,
@@ -214,3 +215,27 @@ def test_verifier_reports_a_missing_tree(tmp_path: Path) -> None:
     assert result.ok is False
     assert any("report problem.json: missing" in error for error in result.errors)
     assert any("live evidence" in error for error in result.errors)
+
+
+def test_concurrency_accepts_a_short_smoke_run() -> None:
+    jobs = [
+        {
+            "job_id": f"job-{index:03d}",
+            "sandbox_name": f"sbx-smoke{index:03d}",
+            "started_at": "2026-11-07T00:00:00+00:00",
+            "end_time": "2026-11-07T00:00:01+00:00",
+            "duration_s": 1.0,
+            "outcome": "success",
+        }
+        for index in (1, 2)
+    ]
+    payload = {
+        "jobs": jobs,
+        "mode": "sequential",
+        "parallelism": 1,
+        "breakage_notes": "Short smoke run; no concurrency claim is made.",
+    }
+    report = ConcurrencyReport.model_validate(payload)
+    assert len(report.jobs) == 2
+    with pytest.raises(ValidationError, match="jobs"):
+        ConcurrencyReport.model_validate({**payload, "jobs": []})

@@ -555,7 +555,10 @@ class ConcurrencyJob(_Schema):
 
 
 class ConcurrencyReport(_VersionedSchema):
-    jobs: list[ConcurrencyJob] = Field(min_length=5)
+    # The committed benchmark has at least five runs, so it reports five jobs.
+    # A short smoke run reports one job per run; the verifier cross-checks the
+    # job count against reliability.run_count.
+    jobs: list[ConcurrencyJob] = Field(min_length=1)
     mode: Literal["sequential"]
     parallelism: Literal[1]
     breakage_notes: str = Field(min_length=40)
@@ -1475,6 +1478,7 @@ def verify_submission(root: Path | str) -> VerificationResult:
     reliability = loaded.get("reliability.json")
     containment = loaded.get("containment.json")
     failure_policy = loaded.get("failure_policy.json")
+    concurrency = loaded.get("concurrency.json")
     workflow = loaded.get("workflow.json")
 
     if isinstance(capabilities, CapabilitiesReport):
@@ -1548,6 +1552,14 @@ def verify_submission(root: Path | str) -> VerificationResult:
             if str(reliability.run_count) not in problem.proof_output:
                 warnings.append(
                     "problem.proof_output does not mention the evaluation run count"
+                )
+        if isinstance(concurrency, ConcurrencyReport):
+            expected_jobs = min(5, reliability.run_count)
+            if len(concurrency.jobs) != expected_jobs:
+                errors.append(
+                    "concurrency: expected "
+                    f"{expected_jobs} jobs for {reliability.run_count} evaluation runs, "
+                    f"found {len(concurrency.jobs)}"
                 )
 
     _secret_scan(root, _read_env_key(root), errors, checked)

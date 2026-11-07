@@ -393,7 +393,7 @@ class BrowserSession:
 
     @staticmethod
     def _write_action_log(record: ActionRecord) -> None:
-        with ACTIONS_LOG.open("a", encoding="utf-8") as handle:
+        with ACTIONS_LOG.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(
                 json.dumps(
                     {

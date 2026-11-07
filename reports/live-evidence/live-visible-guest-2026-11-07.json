@@ -51,8 +51,8 @@
   "evidence": {
     "actions_log": {
       "path": "reports/live-evidence/live-visible-actions-2026-11-07.jsonl",
-      "sha256": "745269a8d8b8645a33cb6929ad3b7eb561f1a3c9a3f52b06bea81d03443cc92f",
-      "bytes": 9195,
+      "sha256": "f504a26ee2564abcf37592745e4cfcd048085ef809829126386398f8d1f00ace",
+      "bytes": 9155,
       "rows": 40,
       "note": "Live-only action log for sandbox sbx-0p9uvoeaz05r."
     },
@@ -74,8 +74,8 @@
     ],
     "command_log": {
       "path": "reports/live-evidence/live-visible-commands-2026-11-07.jsonl",
-      "sha256": "21bff51d5751f9ed54dac7fe1ee1c43f58dc4be8e32cba10876decec0cd0abd2",
-      "bytes": 16258,
+      "sha256": "783dc0298354db954c381428a5c9796fb3301c0b0e9381fd9cfbc8227c3bac19",
+      "bytes": 16198,
       "rows": 60,
       "note": "Live-only command audit for sandbox sbx-0p9uvoeaz05r."
     }

@@ -1,0 +1,25 @@
+# Keep text files LF on every platform so recorded hashes are stable.
+* text=auto eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.sql text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# Binary evidence must never be line-ending converted.
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.ico binary
+*.mp4 binary
+*.webm binary
+*.zip binary
+*.woff binary
+*.woff2 binary

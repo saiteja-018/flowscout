@@ -268,7 +268,7 @@ class CommandLogger:
             record["detail"] = redact(detail)
         line = json.dumps(record, ensure_ascii=False)
         with self._lock:
-            with self.path.open("a", encoding="utf-8") as handle:
+            with self.path.open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write(line + "\n")
 
 
