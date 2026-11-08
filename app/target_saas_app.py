@@ -230,6 +230,7 @@ def _page(title: str, body: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ShopDemo is FlowScout's deterministic local checkout fixture for browser QA demonstrations.">
   <title>{html.escape(title)} - ShopDemo</title>
   <style>{PAGE_STYLE}</style>
 </head>
@@ -302,10 +303,12 @@ def checkout(request: Request) -> HTMLResponse:
             else '<p data-testid="applied-coupons">No coupons applied</p>'
         )
         total_class = "total negative" if state.total < 0 else "total"
+        discount_display = f"-${_money(state.discount)}" if state.discount else "$0.00"
         flash = ""
         if state.message:
             kind = "success" if state.message_kind == "success" else "error"
-            flash = f'<div class="flash {kind}" data-testid="coupon-result" role="status">{html.escape(state.message)}</div>'
+            role = "status" if kind == "success" else "alert"
+            flash = f'<div class="flash {kind}" data-testid="coupon-result" role="{role}">{html.escape(state.message)}</div>'
             state.message = ""
         body = f"""
     <p><a href="/shop/" data-testid="back-to-shop">Back to shop</a></p>
@@ -318,7 +321,7 @@ def checkout(request: Request) -> HTMLResponse:
     </table>
     <section class="totals">
       <p><span>Subtotal</span><span data-testid="cart-subtotal">${_money(SUBTOTAL)}</span></p>
-      <p><span>Discount</span><span data-testid="cart-discount">-${_money(state.discount)}</span></p>
+      <p><span>Discount</span><span data-testid="cart-discount">{discount_display}</span></p>
       <p class="{total_class}"><span>Total</span><span class="{'negative' if state.total < 0 else ''}" data-testid="cart-total" data-value="{_money(state.total)}">${_money(state.total)}</span></p>
       {applied}
     </section>
@@ -344,7 +347,9 @@ async def apply_coupon_form(request: Request) -> Response:
         body = _page(
             "Checkout unavailable",
             '<div class="flash error" data-testid="failure-page">'
-            "Checkout service temporarily unavailable. The fixture will recover on retry.</div>",
+            "Checkout service temporarily unavailable. The fixture will recover on retry.</div>"
+            '<p><a class="button" href="/shop/checkout" data-testid="back-to-checkout">'
+            "Back to checkout</a></p>",
         )
         return _attach_session(HTMLResponse(body, status_code=503), sid, is_new)
     return _attach_session(RedirectResponse("/shop/checkout", status_code=303), sid, is_new)
@@ -358,6 +363,15 @@ async def apply_coupon_api(request: Request) -> JSONResponse:
     except Exception:
         return _attach_session(
             JSONResponse({"success": False, "message": "Invalid JSON body."}, status_code=400),
+            sid,
+            is_new,
+        )
+    if not isinstance(payload, dict):
+        return _attach_session(
+            JSONResponse(
+                {"success": False, "message": "JSON body must be an object."},
+                status_code=400,
+            ),
             sid,
             is_new,
         )
@@ -394,8 +408,30 @@ async def set_mode(request: Request) -> JSONResponse:
     try:
         payload = await request.json()
     except Exception:
-        payload = {}
-    fixed = bool(payload.get("fixed", False))
+        return _attach_session(
+            JSONResponse({"success": False, "message": "Invalid JSON body."}, status_code=400),
+            sid,
+            is_new,
+        )
+    if not isinstance(payload, dict):
+        return _attach_session(
+            JSONResponse(
+                {"success": False, "message": "JSON body must be an object."},
+                status_code=400,
+            ),
+            sid,
+            is_new,
+        )
+    fixed = payload.get("fixed", False)
+    if not isinstance(fixed, bool):
+        return _attach_session(
+            JSONResponse(
+                {"success": False, "message": "fixed must be a boolean."},
+                status_code=400,
+            ),
+            sid,
+            is_new,
+        )
     with _STATE_LOCK:
         state.fixed_mode = fixed
         _reset_state(state)

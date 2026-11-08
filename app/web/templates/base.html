@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}FlowScout Flight Deck{% endblock %}</title>
+  <meta name="description" content="{% block description %}FlowScout is a browser QA agent that reproduces a checkout defect, captures evidence, generates regression tests, and verifies cleanup.{% endblock %}">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/site.css">
+  <script src="/static/head.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="topline" aria-hidden="true">
+    <span>READ-ONLY EVIDENCE SITE</span>
+    <span>NO CLOUD CREDENTIALS</span>
+    <span>RECORDED RUNS / LIVE PROOF</span>
+  </div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="FlowScout Flight Deck home">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-word">FLOW<span>SCOUT</span></span>
+      <span class="brand-slash">//</span>
+      <span class="brand-sub">FLIGHT DECK</span>
+    </a>
+    <nav class="primary-nav" aria-label="Primary">
+      {% set path = request.url.path %}
+      <a href="/demo" class="{% if path == '/demo' %}is-active{% endif %}">Replay</a>
+      <a href="/live" class="{% if path == '/live' %}is-active{% endif %}">Live evidence</a>
+      <a href="/ops">Ops</a>
+      <a href="{{ github_url }}" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>FlowScout Flight Deck</span>
+    </div>
+    <p>Browser QA that produces evidence, not just a pass/fail.</p>
+    <div class="footer-links">
+      <a href="/demo">Recorded replay</a>
+      <a href="/live">Live Celesto evidence</a>
+      <a href="/ops">Operational dashboard</a>
+      <a href="{{ github_url }}" rel="noreferrer">Source</a>
+    </div>
+    <div class="footer-meta">
+      <span>MIT · Sai Teja Satyam Seeti</span>
+      <span>Celesto AI Sandbox Challenge</span>
+    </div>
+  </footer>
+</body>
+</html>

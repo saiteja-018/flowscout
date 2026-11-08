@@ -15,16 +15,16 @@
   "node_playwright_specs": "tests\\generated",
   "source_files": {
     "app/sandbox_runner.py": "93e33290596b60119905e731a08a663a7b8898c351a746edb8a88c8e39262b45",
-    "app/qa_agent.py": "738a748520a1d8768aa8fc08a8ea1e10ed569bb8743869639e589c5c264ffa8a",
+    "app/qa_agent.py": "04af082a4b5f4a8bb936c4acc8935e4abb668d15c0ae6b76f6e57fef428d7877",
     "app/ownership.py": "c41204d87a22c8529a436a2dc379da2bdab02a2c6e1593ae73fafd6442bbf679",
     "app/evidence_io.py": "0febf1005c8484ee18f92207311680eff3d1e20190585c0f3b7f6a0826b35231",
     "app/report_schemas.py": "1449dd169c42402f5850c07cfedf0b2649cb68616678e7a99944770cda4192b6",
     "app/provenance.py": "1c3b45932a8e7f49bfe50c561708528ecb658d86d0ed9b568b0f5f16a0e25f92",
     "app/guest_browser_launcher.py": "6aa742c85298e35957db4ac71f9124e91572324b678535a49df2a15a23668b1f",
-    "app/guest_browser_worker.py": "ffa1876b555bfe4cfb36d23e02aabba30543628635ee1bcb75bda1377d3ef874",
+    "app/guest_browser_worker.py": "e1eed2d459eb29e53a6dc2846a484a5e85b7f1431aca3d1f0de4682ff3c3fa06",
     "app/guest_healthcheck.py": "6d67b4031ffb28b3cf7f9c3e79e857e0e66aae76047cf8e335d721b611cdcf83",
-    "app/main.py": "8de5d61229b950191f5c92fe129077b53ee96a999aad35f2870006a0ff4b60b8",
-    "app/target_saas_app.py": "27a4d99c9cfc284565c588e1897aa5a0716e352cbf06f67fa12248fcab1d0921",
+    "app/main.py": "d79048d9341a73a4f6e5e62ee57f4da6407116644ca7e503abf93eca647dfff8",
+    "app/target_saas_app.py": "b54351839e533618d1af19ebc9a80dfb39c090cfda1c1e89880ef715320aa15e",
     "playwright.config.ts": "33a2a1067c209d5f356d8211cd56ad2aaf9b24dfe19d109dbf0f38372ada1a06",
     "scripts/run_live_demo.py": "964ed0ad1e9db593c338e5690e0ed1ef7e64f0ffb7d4b17549b21ad07649a209",
     "scripts/run_live_single.py": "257c289a8d38c6009475e681d7444e38dfb84d2a94b35de6efa98844b48cfb93",
@@ -37,6 +37,6 @@
     "git_dirty": null,
     "git_untracked_count": null,
     "captured_at": "2026-11-07T12:48:55.320480+00:00",
-    "note": "The mock benchmark predates provenance capture and was generated from a working tree with uncommitted changes. Source hashes were refreshed during the schema migration and again for the CI dependency, line-ending, and walkthrough-conversion fixes; rerun the mock benchmark for a commit-pinned record."
+    "note": "The mock benchmark predates provenance capture and was generated from a working tree with uncommitted changes. Source hashes were refreshed during the schema migration and for subsequent non-workflow changes (CI dependency, line endings, walkthrough conversion, and the read-only Flight Deck site routes); the QA workflow was not rerun. Rerun the mock benchmark for a commit-pinned record."
   }
 }

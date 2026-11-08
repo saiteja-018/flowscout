@@ -1,0 +1,48 @@
+{% extends "console/base.html" %}
+{% from "console/_macros.html" import status_chip, mode_chip, empty_state %}
+{% block title %}Projects · FlowScout{% endblock %}
+{% block eyebrow %}Workspace{% endblock %}
+{% block heading %}Projects.{% endblock %}
+{% block subheading %}Each target website keeps its own run history, saved tests, and regression baseline.{% endblock %}
+
+{% block content %}
+{% if projects %}
+<section class="project-grid">
+  {% for project in projects %}
+  {% set last = last_run.get(project.project_id) %}
+  <article class="panel project-card">
+    <header class="project-card-head">
+      <span class="project-avatar project-avatar-lg">{{ project.name[:2] | upper }}</span>
+      <div class="project-card-title">
+        <h2>{{ project.name }}</h2>
+        <a class="mono small" href="{{ project.target_url }}" target="_blank" rel="noreferrer">{{ project.target_url | short(52) }}</a>
+      </div>
+    </header>
+    <div class="project-stats">
+      <div><span>Runs</span><strong>{{ run_counts.get(project.project_id, 0) }}</strong></div>
+      <div><span>Saved tests</span><strong>{{ test_counts.get(project.project_id, 0) }}</strong></div>
+      <div><span>Last run</span><strong>{% if last %}{{ last.created_at | ago }}{% else %}—{% endif %}</strong></div>
+    </div>
+    {% if last %}
+    <div class="project-last">
+      {{ status_chip(last.status) }}
+      {{ mode_chip(last.mode) }}
+      <span class="kind">{{ last.kind | titlecase }}</span>
+      <span class="project-last-id mono">{{ last.run_id | short(16) }}</span>
+    </div>
+    {% else %}
+    <p class="muted small">No runs recorded for this project yet.</p>
+    {% endif %}
+    <footer class="project-card-foot">
+      <a class="btn btn-ghost btn-sm" href="/console/new?target={{ project.target_url | urlencode }}">New run</a>
+      <a class="btn btn-ghost btn-sm" href="/console/tests?project_id={{ project.project_id }}">Tests</a>
+      <a class="btn btn-ghost btn-sm" href="/console/regression?project_id={{ project.project_id }}">Regression</a>
+      <a class="text-link" href="/console/runs?project_id={{ project.project_id }}">History <span aria-hidden="true">→</span></a>
+    </footer>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+{{ empty_state('No projects yet', 'Start a QA run and FlowScout creates the project automatically from the target URL.', '/console/new', 'Start a run') }}
+{% endif %}
+{% endblock %}

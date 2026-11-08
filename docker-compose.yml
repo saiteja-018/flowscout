@@ -8,13 +8,21 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-ledger}:${POSTGRES_PASSWORD:-ledger}@ledger:5432/${POSTGRES_DB:-ledger}
       - FLOWSCOUT_LEDGER=postgres
+      - FLOWSCOUT_CONSOLE_STORE=${FLOWSCOUT_CONSOLE_STORE:-postgres}
       - API_PORT=8080
       - CELESTO_MODE=${CELESTO_MODE:-mock}
       - CELESTO_API_KEY=${CELESTO_API_KEY:-}
       - CELESTO_PROVIDER=${CELESTO_PROVIDER:-cloud}
+      - CELESTO_SIZE_ID=${CELESTO_SIZE_ID:-micro}
+      - CELESTO_IMAGE=${CELESTO_IMAGE:-ubuntu-desktop-24.04}
+      - CELESTO_TEMPLATE_ID=${CELESTO_TEMPLATE_ID:-browser-agent}
+      - CELESTO_CREATE_PATIENCE_S=${CELESTO_CREATE_PATIENCE_S:-1800}
+      - CELESTO_KEEP_COMPUTER_IDS=${CELESTO_KEEP_COMPUTER_IDS:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_MODEL=${LLM_MODEL:-}
+    volumes:
+      - console_data:/app/reports/console
     depends_on:
       ledger:
         condition: service_healthy
@@ -45,3 +53,4 @@ services:
 
 volumes:
   ledger_data:
+  console_data:

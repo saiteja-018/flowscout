@@ -16,3 +16,7 @@ tmp
 temp
 .vscode
 .idea
+.workbuddy-ai
+.zcode
+reports/console
+logs/ownership

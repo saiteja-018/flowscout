@@ -85,3 +85,44 @@ def test_session_state_is_isolated(client: TestClient) -> None:
     client.post("/shop/api/apply", json={"coupon_code": "SAVE20"})
     assert client.get("/shop/api/state").json()["times_applied"] == 1
     assert other.get("/shop/api/state").json()["times_applied"] == 0
+
+
+def test_checkout_without_coupons_shows_zero_discount(client: TestClient) -> None:
+    response = client.get("/shop/checkout")
+    assert response.status_code == 200
+    assert 'data-testid="cart-discount">$0.00</span>' in response.text
+    assert "-$0.00" not in response.text
+
+
+def test_failure_page_links_back_to_checkout(client: TestClient) -> None:
+    client.post("/shop/api/trigger-failure")
+    response = client.post("/shop/apply", data={"coupon_code": "SAVE20"})
+    assert response.status_code == 503
+    assert 'data-testid="failure-page"' in response.text
+    assert 'data-testid="back-to-checkout"' in response.text
+    assert 'href="/shop/checkout"' in response.text
+
+
+def test_apply_rejects_non_object_json(client: TestClient) -> None:
+    response = client.post("/shop/api/apply", json=["SAVE20"])
+    assert response.status_code == 400
+    assert response.json()["message"] == "JSON body must be an object."
+    assert client.get("/shop/api/state").json()["times_applied"] == 0
+
+
+def test_mode_requires_an_object_with_a_boolean(client: TestClient) -> None:
+    non_object = client.post("/shop/api/mode", json=["fixed"])
+    assert non_object.status_code == 400
+    assert non_object.json()["message"] == "JSON body must be an object."
+
+    non_boolean = client.post("/shop/api/mode", json={"fixed": "false"})
+    assert non_boolean.status_code == 400
+    assert non_boolean.json()["message"] == "fixed must be a boolean."
+
+    assert client.get("/shop/api/state").json()["fixed_mode"] is False
+
+
+def test_shop_pages_have_a_meta_description(client: TestClient) -> None:
+    response = client.get("/shop/")
+    assert response.status_code == 200
+    assert 'name="description"' in response.text

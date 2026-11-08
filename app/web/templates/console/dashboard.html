@@ -1,0 +1,127 @@
+{% extends "console/base.html" %}
+{% from "console/_macros.html" import status_chip, mode_chip, metric_card, run_table, empty_state, progress %}
+{% block title %}Dashboard · FlowScout{% endblock %}
+{% block eyebrow %}Operations overview{% endblock %}
+{% block heading %}Your website, under evidence.{% endblock %}
+{% block subheading %}Real browser runs, detected issues, and regression tests that stay saved. Every number below comes from this console's store.{% endblock %}
+
+{% block content %}
+<section class="hero-panel">
+  <div class="hero-copy">
+    <span class="hero-kicker"><span class="pulse-dot"></span> {% if config.live_configured %}Celesto live connection ready{% else %}Mock mode · Celesto not configured{% endif %}</span>
+    <h2>Point FlowScout at a public URL.<br>Get a browser-backed QA report.</h2>
+    <p>Exploration, screenshots, console and network evidence, generated tests, and a rerun that compares PASS / FAIL against the previous regression.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="/console/new">Start a QA run</a>
+      <a class="btn btn-ghost" href="/console/reports">Open reports</a>
+    </div>
+  </div>
+  <div class="hero-side">
+    <div class="hero-status-row">
+      <span>Execution</span>
+      <strong>{{ 'Live Celesto sandbox' if config.celesto_mode == 'live' else 'Host Chromium (mock)' }}</strong>
+    </div>
+    <div class="hero-status-row">
+      <span>Store backend</span>
+      <strong>{{ store_backend }}</strong>
+    </div>
+    <div class="hero-status-row">
+      <span>AI planner</span>
+      <strong>{{ 'Configured' if config.planner_configured else 'Deterministic fallback' }}</strong>
+    </div>
+    <div class="hero-status-row">
+      <span>Protected sandboxes</span>
+      <strong>{{ config.protected_ids | length }}</strong>
+    </div>
+    <p class="hero-note">Live runs consume Celesto credits and require explicit authorization on the run form. Protected sandbox IDs are never touched by cleanup.</p>
+  </div>
+</section>
+
+<section class="metrics" aria-label="Key metrics">
+  {{ metric_card('QA runs', stats.runs, stats.running_runs ~ ' active now') }}
+  {{ metric_card('Saved tests', stats.test_cases, stats.test_results ~ ' regression results') }}
+  {{ metric_card('Issues found', stats.issues, stats.newly_failing ~ ' newly failing', 'warn') }}
+  {% set result_total = stats.passed_results + stats.failed_results %}
+  {{ metric_card('Test pass rate', ((stats.passed_results / result_total * 100) | round | int if result_total else 0) ~ '%', (stats.passed_results ~ ' of ' ~ result_total ~ ' results') if result_total else 'No regression results yet') }}
+</section>
+
+<div class="layout-two">
+  <section class="panel panel-wide">
+    <header class="panel-head">
+      <div>
+        <h2>Recent runs</h2>
+        <p>Live progress updates while a run is executing.</p>
+      </div>
+      <a class="text-link" href="/console/runs">All runs <span aria-hidden="true">→</span></a>
+    </header>
+    {{ run_table(runs, projects_by_id) }}
+  </section>
+
+  <aside class="panel">
+    <header class="panel-head">
+      <div><h2>Readiness</h2><p>What this console can execute.</p></div>
+    </header>
+    <dl class="fact-list">
+      <div><dt>Celesto mode</dt><dd>{{ mode_chip(config.celesto_mode) }}</dd></div>
+      <div><dt>Live configured</dt><dd><span class="chip {{ 'is-good' if config.live_configured else 'is-warn' }}">{{ 'Yes' if config.live_configured else 'No' }}</span></dd></div>
+      <div><dt>Planner</dt><dd>{{ 'LLM configured' if config.planner_configured else 'Heuristic only' }}</dd></div>
+      <div><dt>Sandbox size</dt><dd class="mono">{{ config.celesto_size }}</dd></div>
+      <div><dt>Exploration steps</dt><dd>{{ config.default_max_steps }}</dd></div>
+      <div><dt>Target allowlist</dt><dd>{% if config.allowlist %}<span class="mono small">{{ config.allowlist | join(', ') }}</span>{% else %}<span class="muted">Any validated public host</span>{% endif %}</dd></div>
+    </dl>
+    <div class="panel-note">
+      <strong>Safety boundary</strong>
+      <p>Live mode rejects private, loopback, link-local, and cloud-metadata addresses before a browser starts. Mock/local mode permits loopback and private targets for the bundled demo; metadata, link-local, and reserved addresses stay blocked. Saved tests only contain validated actions — never generated code.</p>
+    </div>
+  </aside>
+</div>
+
+<div class="layout-two">
+  <section class="panel">
+    <header class="panel-head">
+      <div><h2>Projects</h2><p>Targets tracked by this store.</p></div>
+      <a class="text-link" href="/console/projects">View all <span aria-hidden="true">→</span></a>
+    </header>
+    {% if projects %}
+    <ul class="project-list">
+      {% for project in projects %}
+      <li>
+        <a href="/console/runs?project_id={{ project.project_id }}">
+          <span class="project-avatar">{{ project.name[:2] | upper }}</span>
+          <span class="project-info">
+            <strong>{{ project.name }}</strong>
+            <span class="mono">{{ project.target_url | short(48) }}</span>
+          </span>
+          <span class="project-arrow" aria-hidden="true">→</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    {{ empty_state('No projects yet', 'A project is created automatically when you start a run.', '/console/new', 'Start a run') }}
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <header class="panel-head">
+      <div><h2>Latest generated tests</h2><p>Structured, validated, reusable.</p></div>
+      <a class="text-link" href="/console/tests">Test cases <span aria-hidden="true">→</span></a>
+    </header>
+    {% if tests %}
+    <ul class="test-list">
+      {% for test in tests %}
+      <li>
+        <span class="test-icon" aria-hidden="true">✓</span>
+        <div>
+          <strong>{{ test.name | short(58) }}</strong>
+          <span class="test-meta">{{ test.actions | length }} actions · {{ test.assertions | length }} assertions · {{ test.created_at | ago }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    {{ empty_state('No saved tests', 'Run an exploration; FlowScout saves validated tests automatically.') }}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

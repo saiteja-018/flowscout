@@ -1,0 +1,41 @@
+{% extends "console/base.html" %}
+{% from "console/_macros.html" import status_chip, mode_chip, empty_state %}
+{% block title %}Reports · FlowScout{% endblock %}
+{% block eyebrow %}Evidence{% endblock %}
+{% block heading %}Reports.{% endblock %}
+{% block subheading %}Downloadable, evidence-backed summaries for every completed run — issues, screenshots, logs, and regression results.{% endblock %}
+
+{% block content %}
+{% if runs %}
+<div class="report-grid">
+  {% for run in runs %}
+  {% set project = projects_by_id.get(run.project_id) %}
+  <article class="panel report-card">
+    <header class="report-card-head">
+      <div>
+        <span class="eyebrow">{{ run.kind | titlecase }} report</span>
+        <h2>{{ project.name if project else run.target_url | short(40) }}</h2>
+        <span class="mono small">{{ run.run_id }}</span>
+      </div>
+      {{ status_chip(run.status) }}
+    </header>
+    <div class="report-card-meta">
+      {{ mode_chip(run.mode) }}
+      <span>{{ run.issues | length }} issues</span>
+      <span>{{ run.generated_test_ids | length }} tests</span>
+      <span>{{ run.duration_s | duration }}</span>
+      <span>{{ run.finished_at | dt('%b %d, %H:%M') }}</span>
+    </div>
+    <p class="report-target mono">{{ run.target_url | short(64) }}</p>
+    <footer class="report-card-foot">
+      <a class="btn btn-ghost btn-sm" href="/console/reports/{{ run.run_id }}">Open report</a>
+      <a class="btn btn-ghost btn-sm" href="/console/runs/{{ run.run_id }}/report.json">Download JSON</a>
+      <a class="text-link" href="/console/runs/{{ run.run_id }}">Run detail <span aria-hidden="true">→</span></a>
+    </footer>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+{{ empty_state('No completed reports', 'A report is generated when an exploration or regression run finishes.', '/console/new', 'Start a run') }}
+{% endif %}
+{% endblock %}

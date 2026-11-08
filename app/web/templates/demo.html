@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Recorded replay — FlowScout Flight Deck{% endblock %}
+{% block description %}Replay the committed ten-step FlowScout mock run: SAVE20 coupon stacking, a controlled HTTP 503, fresh-sandbox recovery, generated tests, and verified cleanup.{% endblock %}
+{% block body_class %}page-demo{% endblock %}
+{% block head %}<script src="/static/demo.js" defer></script>{% endblock %}
+
+{% block content %}
+<section class="page-hero shell">
+  <div>
+    <p class="eyebrow"><span class="pulse pulse-mock" aria-hidden="true"></span> Recorded mock run / no credentials</p>
+    <h1>Ten steps.<br>One defect.<br><span class="muted">Full evidence.</span></h1>
+    <p class="page-lede">
+      This is a replay of the committed mock run. The browser was real host Chromium;
+      the sandbox adapter was mock. Pressing play does not launch a browser or call
+      Celesto.
+    </p>
+  </div>
+  <dl class="run-facts">
+    <div><dt>Sandbox</dt><dd><code>{{ run.sandbox_name }}</code></dd></div>
+    <div><dt>Agent clock</dt><dd>{{ run.wall_clock_s|seconds }}</dd></div>
+    <div><dt>Browser</dt><dd><code>{{ run.browser_runtime }}</code></dd></div>
+    <div><dt>Planner</dt><dd><code>{{ run.planner_mode }}</code></dd></div>
+    <div><dt>Actions</dt><dd>{{ counts.actions }}</dd></div>
+    <div><dt>Lifecycle events</dt><dd>{{ counts.trace }}</dd></div>
+  </dl>
+</section>
+
+<section class="demo-shell shell" data-replay data-total-steps="10">
+  <h2 class="visually-hidden">Recorded replay steps</h2>
+  <div class="replay-toolbar">
+    <div class="replay-controls">
+      <button type="button" class="button button-primary" data-replay-toggle>Play replay</button>
+      <button type="button" class="button button-quiet" data-replay-restart>Restart</button>
+      <button type="button" class="speed-toggle" data-replay-speed aria-pressed="false" aria-label="Replay speed 1×">1×</button>
+      <button type="button" class="button button-quiet" data-replay-skip>Skip to result</button>
+    </div>
+    <div class="replay-status" aria-live="polite">
+      <span data-replay-status>Ready to replay</span>
+      <span data-replay-progress-text>0 / 10</span>
+    </div>
+    <div class="progress-track" aria-hidden="true"><span data-replay-progress></span></div>
+  </div>
+
+  <div class="replay-grid">
+    <ol class="step-list" aria-label="Ten-step recorded workflow">
+      {% for step in steps %}
+      <li class="step-card {% if step.status == 'recovered' %}is-recovery{% endif %}" data-step="{{ step.number }}" data-step-status="{{ step.status }}">
+        <div class="step-rail">
+          <span class="step-number">{{ "%02d"|format(step.number) }}</span>
+        </div>
+        <div class="step-body">
+          <div class="step-heading">
+            <h3>{{ step.title }}</h3>
+            <span class="status-chip status-{{ step.status }}">{{ step.status_label }}</span>
+          </div>
+          <p>{{ step.summary }}</p>
+          {% if step.events %}
+          <details class="step-events">
+            <summary>{{ step.events|length }} lifecycle event{{ '' if step.events|length == 1 else 's' }}</summary>
+            <ul>
+              {% for event in step.events %}
+              <li>
+                <code>{{ event.event }}</code>
+                <span class="event-state">{{ event.state }}</span>
+                <span class="event-detail">{{ event.detail }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </details>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+
+    <aside class="replay-stage" aria-label="Recorded screenshots and coupon ledger">
+      <div class="stage-frame">
+        {% for shot in screenshots %}
+        <figure class="stage-shot {% if loop.first %}is-active{% endif %}" data-shot-step="{{ shot.step }}">
+          <img src="{{ shot.path }}" alt="{{ shot.caption }}" loading="lazy" width="1257" height="799">
+          <figcaption><span>{{ shot.caption }}</span><span>Step {{ "%02d"|format(shot.step) }}</span></figcaption>
+        </figure>
+        {% endfor %}
+        <div class="stage-placeholder" data-stage-placeholder>
+          <span class="micro-label">Evidence preview</span>
+          <strong>Step 4 surfaces the product page and the poisoned review.</strong>
+          <small>Press play or skip to the result.</small>
+        </div>
+      </div>
+
+      <div class="ledger compact-ledger" aria-label="Coupon total sequence">
+        <div class="ledger-head"><span>Application</span><span>Total after</span></div>
+        {% for total in coupon_totals %}
+        <div class="ledger-row" data-total-step="{{ total.step }}">
+          <span class="ledger-index">{{ "%02d"|format(loop.index) }}</span>
+          <strong class="{% if total.value.startswith('-') %}negative{% endif %}">{{ total.value|money }}</strong>
+        </div>
+        {% endfor %}
+        <div class="ledger-foot">Six applications after the 503 reset the fixture.</div>
+      </div>
+
+      <div class="result-card" data-reveal-at="10">
+        <div class="result-top">
+          <span class="status-chip status-succeeded">confirmed defect</span>
+          <span class="micro-label">Replay result</span>
+        </div>
+        <h3>{{ defect.title or "Coupon stacking reproduced" }}</h3>
+        <p>{{ defect.actual_behavior or "Six SAVE20 applications produced a negative total." }}</p>
+        <div class="result-stats">
+          <div><span>Total</span><strong class="negative">-$25.99</strong></div>
+          <div><span>Tests</span><strong>{{ matrix.met }}/{{ matrix.total }}</strong></div>
+          <div><span>Cleanup</span><strong>{{ result.cleanup_ok|yesno }}</strong></div>
+        </div>
+        <a class="text-link" href="#result">Read the full defect card <span aria-hidden="true">→</span></a>
+      </div>
+    </aside>
+  </div>
+  <p class="replay-note">
+    Replay is time-normalized for readability. The recorded run took {{ run.wall_clock_s|seconds }};
+    the lifecycle timestamps are unchanged in the evidence below.
+  </p>
+</section>
+
+<section class="section shell" id="result">
+  <div class="section-head">
+    <p class="section-index">01 / The result</p>
+    <h2>What the run produced.</h2>
+  </div>
+  <div class="result-layout">
+    <article class="defect-card">
+      <div class="defect-card-top">
+        <span class="status-chip status-succeeded">{{ result.classification or "confirmed reproducible defect" }}</span>
+        <span class="micro-label">severity {{ defect.severity or "high" }}</span>
+      </div>
+      <h3>{{ defect.title or "Coupon SAVE20 can be stacked without limit" }}</h3>
+      <p>{{ defect.description or "The checkout accepts SAVE20 repeatedly and produces a negative payable total." }}</p>
+      <div class="behavior-grid">
+        <div>
+          <span class="micro-label">Expected</span>
+          <p>{{ defect.expected_behavior or "A one-use coupon is rejected after its first successful application." }}</p>
+        </div>
+        <div>
+          <span class="micro-label">Actual</span>
+          <p>{{ defect.actual_behavior or "All six applications succeed and the total reaches -$25.99." }}</p>
+        </div>
+      </div>
+      <div class="steps-to-reproduce">
+        <span class="micro-label">Steps to reproduce</span>
+        <ol>
+          {% for step in defect.steps_to_reproduce or [] %}
+          <li>{{ step }}</li>
+          {% endfor %}
+        </ol>
+      </div>
+    </article>
+
+    <div class="result-side">
+      <div class="summary-card">
+        <span class="micro-label">Run summary</span>
+        <dl>
+          <div><dt>Success</dt><dd>{{ result.success|yesno }}</dd></div>
+          <div><dt>Agent clock</dt><dd>{{ result.wall_clock_s|seconds }}</dd></div>
+          <div><dt>Cleanup</dt><dd class="ok">{{ result.cleanup_ok|yesno }}</dd></div>
+          <div><dt>Generated specs</dt><dd>{{ result.test_paths|length }}</dd></div>
+        </dl>
+      </div>
+      <div class="summary-card">
+        <span class="micro-label">Generated files</span>
+        <ul class="file-list">
+          {% for link in result.test_links %}
+          <li><a href="{{ link.href }}">{{ link.label }}</a><br><code>{{ link.path }}</code></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section shell" id="matrix">
+  <div class="section-head">
+    <p class="section-index">02 / The test matrix</p>
+    <h2>Broken and fixed, both checked.</h2>
+  </div>
+  <div class="matrix-grid">
+    {% for case in matrix.cases %}
+    <article class="matrix-card">
+      <div class="matrix-top">
+        <span class="micro-label">{{ case.spec }}</span>
+        <span class="status-chip {% if case.expectation_met %}status-succeeded{% else %}status-failed{% endif %}">
+          {{ "expectation met" if case.expectation_met else "expectation missed" }}
+        </span>
+      </div>
+      <div class="matrix-mode">{{ case.test_mode }} build</div>
+      <div class="matrix-outcome">
+        <strong class="{% if case.passed %}ok{% else %}bad{% endif %}">{{ "passed" if case.passed else "failed" }}</strong>
+        <span>{{ "expected to pass" if case.expected_pass else "expected to fail" }}</span>
+      </div>
+      <p>{{ case.rationale }}</p>
+    </article>
+    {% endfor %}
+  </div>
+  <p class="source-note">
+    {{ matrix.met }}/{{ matrix.total }} expectations met. Source:
+    <a href="/reports/evidence/test-matrix.json">test-matrix.json</a>.
+  </p>
+</section>
+
+<section class="section shell" id="actions">
+  <div class="section-head">
+    <p class="section-index">03 / The action log</p>
+    <h2>{{ counts.actions }} structured actions.</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table action-table">
+      <thead>
+        <tr>
+          <th>Step</th>
+          <th>Action</th>
+          <th>Description</th>
+          <th>Target / value</th>
+          <th>Output</th>
+          <th>OK</th>
+          <th>Wall</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for action in actions %}
+        <tr data-action-step="{{ action.step }}">
+          <td><span class="step-pill">{{ "%02d"|format(action.step) }}</span></td>
+          <td><code>{{ action.action_type }}</code></td>
+          <td>{{ action.description }}</td>
+          <td><code>{{ action.target }}</code></td>
+          <td>{% if action.output %}<code>{{ action.output }}</code>{% else %}—{% endif %}</td>
+          <td class="{% if action.success %}ok{% else %}bad{% endif %}">{{ action.success|yesno }}</td>
+          <td>{{ action.wall_ms|number }} ms</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="source-note">
+    Source: <a href="/reports/workflow.json">workflow.json</a> and
+    <a href="/reports/evidence/actions.jsonl">actions.jsonl</a>.
+  </p>
+</section>
+
+<section class="section shell" id="trace">
+  <div class="section-head">
+    <p class="section-index">04 / The lifecycle</p>
+    <h2>{{ counts.trace }} events, including the 503.</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table trace-table">
+      <thead>
+        <tr><th>Time</th><th>Step</th><th>Event</th><th>State</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {% for event in trace %}
+        <tr class="{% if event.event == 'failure' %}row-failure{% elif event.event == 'sandbox_recreated' %}row-recovery{% endif %}">
+          <td><code>{{ event.ts }}</code></td>
+          <td><span class="step-pill">{{ "%02d"|format(event.step) }}</span></td>
+          <td><code>{{ event.event }}</code></td>
+          <td>{{ event.state }}</td>
+          <td>{{ event.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="source-note">
+    Source: <a href="/reports/failure_trace.jsonl">failure_trace.jsonl</a>. The step-7
+    failure is a controlled HTTP 503; no defect claim is made from that state.
+  </p>
+</section>
+
+<section class="section shell next-section">
+  <div>
+    <p class="section-index">Next</p>
+    <h2>The live run tells the cloud story.</h2>
+    <p>One Celesto Micro sandbox, a real 503, a fresh replacement, and a verified retry.</p>
+  </div>
+  <div class="next-actions">
+    <a class="button button-primary" href="/live">Inspect live evidence <span aria-hidden="true">→</span></a>
+    <a class="button button-ghost" href="/ops">Open the operational dashboard</a>
+  </div>
+</section>
+{% endblock %}

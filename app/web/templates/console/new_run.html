@@ -1,0 +1,127 @@
+{% extends "console/base.html" %}
+{% from "console/_macros.html" import mode_chip %}
+{% block title %}New QA run · FlowScout{% endblock %}
+{% block eyebrow %}New run{% endblock %}
+{% block heading %}Explore a website.{% endblock %}
+{% block subheading %}FlowScout opens the target in a real Chromium browser, follows safe same-origin paths, records evidence, and turns what it learns into saved regression tests.{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/console/runs">Run history</a>{% endblock %}
+
+{% block content %}
+<div class="layout-form">
+  <form class="panel run-form" id="new-run-form" data-endpoint="/console/api/runs" novalidate>
+    <header class="panel-head">
+      <div><h2>Run configuration</h2><p>Only HTTP(S) targets are accepted; live mode requires a public host.</p></div>
+      {{ mode_chip('live' if config.live_configured else 'mock') }}
+    </header>
+
+    <div class="field">
+      <label for="target_url">Website URL</label>
+      <div class="input-with-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 9h-3a15 15 0 0 0-1.3-5.4A8 8 0 0 1 18.9 11ZM12 4c.9 1.2 1.7 3.5 1.9 7h-3.8c.2-3.5 1-5.8 1.9-7ZM5.1 11a8 8 0 0 1 4.3-5.4A15 15 0 0 0 8.1 11h-3Zm0 2h3a15 15 0 0 0 1.3 5.4A8 8 0 0 1 5.1 13Zm6.9 7c-.9-1.2-1.7-3.5-1.9-7h3.8c-.2 3.5-1 5.8-1.9 7Zm2.6-1.6A15 15 0 0 0 15.9 13h3a8 8 0 0 1-4.3 5.4Z"/></svg>
+        <input id="target_url" name="target_url" type="text" inputmode="url" autocomplete="url" required maxlength="2048" placeholder="https://example.com" spellcheck="false">
+      </div>
+      <span class="field-hint">The bundled demo lives at <a href="/shop/" target="_blank" rel="noreferrer">/shop/</a>. <button class="link-button" type="button" data-demo-url="/shop/">Use ShopDemo</button> · public websites without a login are the supported path today.</span>
+    </div>
+
+    <div class="field-grid">
+      <div class="field">
+        <label for="project_id">Project</label>
+        <select id="project_id" name="project_id">
+          <option value="">Auto-create from URL</option>
+          {% for project in projects %}
+          <option value="{{ project.project_id }}">{{ project.name }}</option>
+          {% endfor %}
+        </select>
+        <span class="field-hint">Group runs and tests under an existing project.</span>
+      </div>
+      <div class="field">
+        <label for="project_name">New project name <span class="optional">optional</span></label>
+        <input id="project_name" name="project_name" type="text" maxlength="120" placeholder="Marketing site">
+      </div>
+    </div>
+
+    <fieldset class="field">
+      <legend>Execution mode</legend>
+      <div class="choice-grid">
+        <label class="choice">
+          <input type="radio" name="mode" value="mock" checked>
+          <span class="choice-body">
+            <span class="choice-top"><strong>Mock / host</strong><span class="chip is-muted">No credits</span></span>
+            <span class="choice-desc">A real Chromium browser runs on this host. A mock sandbox record exercises the lifecycle but no Celesto computer is created.</span>
+          </span>
+        </label>
+        <label class="choice {% if not config.live_configured %}is-disabled{% endif %}">
+          <input type="radio" name="mode" value="live" {% if not config.live_configured %}disabled{% endif %}>
+          <span class="choice-body">
+            <span class="choice-top"><strong>Live Celesto</strong><span class="chip is-live-mode">Credits</span></span>
+            <span class="choice-desc">Creates a fresh {{ config.celesto_size }} sandbox, runs Playwright inside the guest, and confirms deletion through Celesto.</span>
+          </span>
+        </label>
+      </div>
+      {% if not config.live_configured %}
+      <span class="field-hint is-warn">Live mode is unavailable until <code>CELESTO_MODE=live</code> and a real <code>CELESTO_API_KEY</code> are configured.</span>
+      {% endif %}
+    </fieldset>
+
+    <div class="live-auth" data-live-auth hidden>
+      <label class="check-line">
+        <input type="checkbox" name="authorize_live" value="true">
+        <span>
+          <strong>I authorize this live Celesto run.</strong>
+          <span class="field-hint">A live run consumes credits and may create a billable sandbox. Only one live run executes at a time.</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="field-grid">
+      <div class="field">
+        <label for="max_steps">Exploration steps <output id="steps-output">{{ config.default_max_steps }}</output></label>
+        <input id="max_steps" name="max_steps" type="range" min="3" max="12" step="1" value="{{ config.default_max_steps }}">
+        <span class="field-hint">A bounded budget of safe interactions. Higher values explore more pages and forms.</span>
+      </div>
+      <div class="field">
+        <label class="switch-line" for="use_ai">
+          <span>
+            <strong>AI-assisted exploration</strong>
+            <span class="field-hint">The planner picks from validated candidates only. Without a planner, deterministic order is used.</span>
+          </span>
+          <input id="use_ai" name="use_ai" type="checkbox" role="switch" checked>
+        </label>
+      </div>
+    </div>
+
+    <div class="form-error" data-form-error hidden role="alert"></div>
+
+    <footer class="form-foot">
+      <p class="form-foot-note">By starting a run you confirm the target is a website you are authorized to test.</p>
+      <button class="btn btn-primary btn-lg" type="submit" data-submit>
+        <span data-submit-label>Start QA run</span>
+        <span class="btn-spinner" aria-hidden="true"></span>
+      </button>
+    </footer>
+  </form>
+
+  <aside class="run-aside">
+    <section class="panel">
+      <header class="panel-head"><div><h2>What happens</h2><p>The real execution path.</p></div></header>
+      <ol class="timeline">
+        <li><span>01</span><div><strong>Validate target</strong><p>Scheme, DNS answers, ports, and private-address rules are checked before anything launches.</p></div></li>
+        <li><span>02</span><div><strong>Create sandbox</strong><p>Mock mode simulates the lifecycle; live mode creates a real Celesto computer and registers ownership.</p></div></li>
+        <li><span>03</span><div><strong>Explore with Chromium</strong><p>Same-origin links, safe fields, and non-destructive controls. Screenshots and browser diagnostics are captured.</p></div></li>
+        <li><span>04</span><div><strong>Detect and save</strong><p>Issues become evidence. Validated actions become saved tests with assertions.</p></div></li>
+        <li><span>05</span><div><strong>Clean up</strong><p>Deletion is attempted in <code>finally</code> and confirmed by the provider. Protected IDs are preserved.</p></div></li>
+      </ol>
+    </section>
+    <section class="panel safety-panel">
+      <header class="panel-head"><div><h2>Guardrails</h2></div></header>
+      <ul class="check-list">
+        <li>No credentials in URLs or browser forms</li>
+        <li>No destructive, payment, or account actions</li>
+        <li>No arbitrary AI-generated code execution</li>
+        <li>No silent mock fallback for a live run</li>
+        <li>Live mode blocks private networks and metadata targets</li>
+      </ul>
+    </section>
+  </aside>
+</div>
+{% endblock %}

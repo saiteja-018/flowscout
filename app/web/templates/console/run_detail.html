@@ -1,0 +1,173 @@
+{% extends "console/base.html" %}
+{% from "console/_macros.html" import status_chip, mode_chip, cleanup_chip, progress, issue_card, result_card, screenshot_grid, log_list, empty_state %}
+{% block title %}Run {{ run.run_id | short(18) }} · FlowScout{% endblock %}
+{% block eyebrow %}Run detail{% endblock %}
+{% block heading %}{{ project.name if project else 'QA run' }}{% endblock %}
+{% block subheading %}{{ run.target_url }}{% endblock %}
+{% block actions %}
+<a class="btn btn-ghost" href="/console/reports/{{ run.run_id }}">Report</a>
+<a class="btn btn-ghost" href="/console/runs/{{ run.run_id }}/report.json">Download JSON</a>
+<a class="btn btn-primary" href="/console/new">New run</a>
+{% endblock %}
+
+{% block content %}
+<section class="run-hero" {% if live %}data-live-run="{{ run.run_id }}" data-run-url="/console/api/runs/{{ run.run_id }}"{% endif %}>
+  <div class="run-hero-main">
+    <div class="run-hero-top">
+      {{ status_chip(run.status) }}
+      {{ mode_chip(run.mode) }}
+      <span class="kind">{{ run.kind | titlecase }}</span>
+      <span class="run-hero-id mono">{{ run.run_id }}</span>
+    </div>
+    <div class="run-hero-progress">
+      {{ progress(run.progress) }}
+      <span class="run-progress-label"><strong data-progress-value>{{ run.progress }}</strong>% · <span data-phase-value>{{ run.phase | titlecase }}</span></span>
+    </div>
+    <div class="run-hero-meta">
+      <span>Started {{ run.started_at | dt }}</span>
+      <span>Duration {{ run.duration_s | duration }}</span>
+      <span>{{ cleanup_chip(run) }}</span>
+    </div>
+  </div>
+  <div class="run-hero-side">
+    <div class="sandbox-fact"><span>Sandbox</span><strong class="mono">{{ run.sandbox_name or '—' }}</strong></div>
+    <div class="sandbox-fact"><span>Provider ID</span><strong class="mono">{{ run.provider_id or '—' }}</strong></div>
+    <div class="sandbox-fact"><span>Cleanup</span><strong>{{ run.cleanup_message or 'Pending' }}</strong></div>
+  </div>
+</section>
+
+{% if run.error %}
+<div class="alert alert-error" role="alert">
+  <strong>Run error</strong>
+  <p>{{ run.error }}</p>
+</div>
+{% endif %}
+
+{% if missing_evidence %}
+<div class="alert alert-warn" role="alert">
+  <strong>Evidence files missing</strong>
+  <p>{{ missing_evidence }} screenshot(s) from this run are no longer on disk. Run the container with a persistent volume mounted at <code>/app/reports/console</code> so evidence survives image and container changes.</p>
+</div>
+{% endif %}
+
+{% if run.kind == 'exploration' %}
+<section class="metrics metrics-compact">
+  <div class="metric"><span class="metric-label">Pages visited</span><strong class="metric-value">{{ run.summary.pages_visited | default(0) }}</strong></div>
+  <div class="metric"><span class="metric-label">Actions</span><strong class="metric-value">{{ run.summary.actions | default(0) }}</strong></div>
+  <div class="metric"><span class="metric-label">Issues</span><strong class="metric-value">{{ run.issues | length }}</strong></div>
+  <div class="metric"><span class="metric-label">Tests generated</span><strong class="metric-value">{{ run.generated_test_ids | length }}</strong></div>
+  <div class="metric"><span class="metric-label">Browser runtime</span><strong class="metric-value metric-text">{{ run.summary.browser_runtime or '—' }}</strong></div>
+  <div class="metric"><span class="metric-label">Planner</span><strong class="metric-value metric-text">{{ run.summary.planner_mode or '—' }}</strong></div>
+</section>
+{% else %}
+<section class="metrics metrics-compact">
+  <div class="metric"><span class="metric-label">Total tests</span><strong class="metric-value">{{ run.summary.total | default(results | length) }}</strong></div>
+  <div class="metric is-good"><span class="metric-label">Passed</span><strong class="metric-value">{{ run.summary.passed | default(0) }}</strong></div>
+  <div class="metric is-bad"><span class="metric-label">Failed</span><strong class="metric-value">{{ run.summary.failed | default(0) }}</strong></div>
+  <div class="metric is-warn"><span class="metric-label">Newly failing</span><strong class="metric-value">{{ run.summary.newly_failing | default(0) }}</strong></div>
+  <div class="metric"><span class="metric-label">Fixed</span><strong class="metric-value">{{ run.summary.fixed | default(0) }}</strong></div>
+  <div class="metric"><span class="metric-label">Duration</span><strong class="metric-value metric-text">{{ run.summary.duration_s | duration }}</strong></div>
+</section>
+{% endif %}
+
+{% if results %}
+<section class="panel">
+  <header class="panel-head">
+    <div><h2>Regression results</h2><p>PASS / FAIL against each test's assertions.</p></div>
+    {% if run.summary.newly_failing %}<span class="chip is-bad">{{ run.summary.newly_failing }} newly failing</span>{% endif %}
+  </header>
+  <div class="result-stack">
+    {% for result in results %}{{ result_card(result) }}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if generated_tests %}
+<section class="panel">
+  <header class="panel-head">
+    <div><h2>Generated tests</h2><p>Saved automatically from this exploration.</p></div>
+    <a class="text-link" href="/console/tests?project_id={{ run.project_id }}">Open library <span aria-hidden="true">→</span></a>
+  </header>
+  <div class="generated-grid">
+    {% for test in generated_tests %}
+    <article class="generated-card">
+      <span class="generated-icon" aria-hidden="true">✓</span>
+      <div>
+        <strong>{{ test.name }}</strong>
+        <span class="test-meta">{{ test.actions | length }} actions · {{ test.assertions | length }} assertions</span>
+      </div>
+      <span class="chip is-good">Saved</span>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<div class="layout-two">
+  <section class="panel panel-wide">
+    <header class="panel-head">
+      <div><h2>Issues</h2><p>Evidence-backed findings from the exploration.</p></div>
+      <span class="chip {{ 'is-bad' if run.issues else 'is-good' }}">{{ run.issues | length }} issue{{ '' if run.issues | length == 1 else 's' }}</span>
+    </header>
+    {% if run.issues %}
+    <div class="issue-stack">{% for issue in run.issues %}{{ issue_card(issue) }}{% endfor %}</div>
+    {% else %}
+    <p class="muted">No issues detected in the pages that were explored. This is not a guarantee for unvisited paths.</p>
+    {% endif %}
+  </section>
+
+  <aside class="panel">
+    <header class="panel-head"><div><h2>Lifecycle</h2><p>Real sandbox state.</p></div></header>
+    <dl class="fact-list">
+      <div><dt>Kind</dt><dd>{{ run.kind | titlecase }}</dd></div>
+      <div><dt>Mode</dt><dd>{{ mode_chip(run.mode) }}</dd></div>
+      <div><dt>Phase</dt><dd data-phase-value>{{ run.phase | titlecase }}</dd></div>
+      <div><dt>Sandbox</dt><dd class="mono small">{{ run.sandbox_name or '—' }}</dd></div>
+      <div><dt>Boot to ready</dt><dd>{{ run.summary.get('sandbox', {}).get('boot_to_ready_s') | duration }}</dd></div>
+      <div><dt>Created</dt><dd>{{ run.created_at | dt }}</dd></div>
+      <div><dt>Finished</dt><dd>{{ run.finished_at | dt }}</dd></div>
+    </dl>
+  </aside>
+</div>
+
+<section class="panel">
+  <header class="panel-head"><div><h2>Screenshots</h2><p>Captured in the browser that executed the run.</p></div></header>
+  {{ screenshot_grid(screenshots) }}
+</section>
+
+<section class="panel">
+  <header class="panel-head"><div><h2>Action timeline</h2><p>Every validated browser action and its result.</p></div></header>
+  {% if run.actions %}
+  <div class="table-wrap">
+    <table class="data-table action-table">
+      <thead><tr><th>#</th><th>Step</th><th>Action</th><th>Target / value</th><th>Result</th><th>Time</th></tr></thead>
+      <tbody>
+        {% for action in run.actions %}
+        <tr>
+          <td data-label="#">{{ loop.index }}</td>
+          <td data-label="Step">{{ action.step }}</td>
+          <td data-label="Action"><span class="action-kind">{{ action.action_type }}</span><span class="cell-sub">{{ action.role }}</span></td>
+          <td data-label="Target">
+            {% if action.selector %}<code>{{ action.selector | short(48) }}</code>{% endif %}
+            {% if action.value %}<span class="cell-sub">{{ action.value | short(64) }}</span>{% endif %}
+          </td>
+          <td data-label="Result">
+            <span class="chip {{ 'is-good' if action.success else 'is-bad' }}">{{ 'ok' if action.success else 'failed' }}</span>
+            {% if action.error %}<span class="cell-sub is-bad-text">{{ action.error | short(80) }}</span>{% endif %}
+          </td>
+          <td data-label="Time">{{ action.wall_ms | round | int }} ms</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No actions recorded.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <header class="panel-head"><div><h2>Run log</h2><p>Service and browser events.</p></div></header>
+  {{ log_list(run.logs) }}
+</section>
+{% endblock %}

@@ -118,13 +118,41 @@ def test_read_degradation_is_explicit() -> None:
     assert response.json()[0]["run_id"] == "run-seed-0001"
 
 
-def test_dashboard_renders_escaped_operational_view(client: TestClient) -> None:
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "FLIGHT DECK" in response.text
-    assert "Ledger unavailable" not in response.text
-    assert "Content-Security-Policy" in response.headers
+def test_root_redirects_to_console(client: TestClient) -> None:
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/console"
+
+    console = client.get("/console")
+    assert console.status_code == 200
+    assert "QA Console" in console.text
+    csp = console.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "connect-src 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
 
 
-def test_dashboard_alias(client: TestClient) -> None:
-    assert client.get("/dashboard").status_code == 200
+@pytest.mark.parametrize("path", ["/demo", "/live", "/ops", "/dashboard"])
+def test_retired_public_site_routes_redirect_to_console(
+    client: TestClient, path: str
+) -> None:
+    response = client.get(path, follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/console"
+
+
+def test_retired_replay_api_is_not_served(client: TestClient) -> None:
+    response = client.get("/api/demo/replay")
+    assert response.status_code == 404
+
+
+def test_console_assets_are_served(client: TestClient) -> None:
+    css = client.get("/static/console.css")
+    js = client.get("/static/console.js")
+    favicon = client.get("/static/favicon.svg")
+    assert css.status_code == 200
+    assert "text/css" in css.headers["content-type"]
+    assert js.status_code == 200
+    assert "javascript" in js.headers["content-type"]
+    assert favicon.status_code == 200
+    assert "image/svg+xml" in favicon.headers["content-type"]

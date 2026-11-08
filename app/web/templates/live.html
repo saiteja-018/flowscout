@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+{% block title %}Live Celesto evidence — FlowScout Flight Deck{% endblock %}
+{% block description %}Committed live Celesto Cloud evidence: one Micro sandbox, a controlled HTTP 503, a fresh-sandbox recovery, and verified cleanup. Not a 20-run benchmark.{% endblock %}
+{% block body_class %}page-live{% endblock %}
+
+{% block content %}
+<section class="page-hero live-hero shell">
+  <div>
+    <p class="eyebrow"><span class="pulse pulse-live" aria-hidden="true"></span> Recorded live evidence / not a fresh run</p>
+    <h1>One live sandbox.<br>A real 503.<br><span class="muted">A verified recovery.</span></h1>
+    <p class="page-lede">
+      Committed Celesto Cloud evidence from 2026-11-07. The platform CDP gateway
+      returned HTTP 501 on Micro, so the in-guest Playwright browser executed the
+      workflow. The site does not start a new sandbox.
+    </p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="#recovery">Follow the recovery <span aria-hidden="true">↓</span></a>
+      <a class="button button-ghost" href="{{ current_ref.path and ('/' + current_ref.path) or '/reports/live-evidence/index.json' }}">Open the raw record</a>
+    </div>
+  </div>
+  <div class="live-stamp">
+    <span class="micro-label">Evidence state</span>
+    <strong>VERIFIED</strong>
+    <span class="stamp-rule"></span>
+    <span>Single-sandbox targeted workflow</span>
+    <span>Not the 20-run benchmark</span>
+    <span class="mono">index: {{ index_generated_at|date }}</span>
+  </div>
+</section>
+
+<section class="signal-strip" aria-label="Live run metrics">
+  <div class="shell signal-grid">
+    <div class="signal">
+      <span class="signal-value">{{ current_outcome.wall_clock_s|seconds }}</span>
+      <span class="signal-label">agent clock</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">{{ current_sandbox.boot_to_ready_s|seconds }}</span>
+      <span class="signal-label">boot to ready</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">{{ current_evidence.actions_log.rows or 40 }}</span>
+      <span class="signal-label">browser actions</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">{{ current_evidence.command_log.rows or 60 }}</span>
+      <span class="signal-label">audited commands</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">{{ current_sandbox.cleanup_ok|yesno }}</span>
+      <span class="signal-label">cleanup confirmed</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">501</span>
+      <span class="signal-label">CDP gateway response</span>
+    </div>
+  </div>
+</section>
+
+<section class="section shell" id="current">
+  <div class="section-head">
+    <p class="section-index">01 / The current run</p>
+    <h2>{{ current.run_id }}</h2>
+  </div>
+  <div class="live-detail-grid">
+    <article class="detail-card">
+      <span class="micro-label">Sandbox</span>
+      <dl class="detail-list">
+        <div><dt>Name</dt><dd><code>{{ current_sandbox.name }}</code></dd></div>
+        <div><dt>Provider ID</dt><dd><code>{{ current_sandbox.provider_id }}</code></dd></div>
+        <div><dt>Template</dt><dd><code>{{ current_sandbox.template_id }}</code></dd></div>
+        <div><dt>Size</dt><dd><code>{{ current_sandbox.size_id }}</code></dd></div>
+        <div><dt>Created</dt><dd>{{ current_sandbox.created_at|date }}</dd></div>
+        <div><dt>Deleted</dt><dd>{{ current_sandbox.deleted_at|date }}</dd></div>
+        <div><dt>Delete confirmation</dt><dd class="ok">{{ current_sandbox.delete_confirmation }}</dd></div>
+      </dl>
+    </article>
+    <article class="detail-card">
+      <span class="micro-label">Browser</span>
+      <dl class="detail-list">
+        <div><dt>Runtime</dt><dd><code>{{ current_browser.runtime }}</code></dd></div>
+        <div><dt>Requested visible</dt><dd>{{ current_browser.requested_visible|yesno }}</dd></div>
+        <div><dt>CDP gateway used</dt><dd>{{ current_browser.cdp_gateway_used|yesno }}</dd></div>
+        <div><dt>CDP gateway</dt><dd class="warn">{{ current_browser.cdp_gateway }}</dd></div>
+      </dl>
+      <p class="detail-note">{{ current_browser.note }}</p>
+    </article>
+    <article class="detail-card">
+      <span class="micro-label">Provenance</span>
+      <dl class="detail-list">
+        <div><dt>Commit</dt><dd><code>{{ current_provenance.git_commit|short_commit }}</code></dd></div>
+        <div><dt>Branch</dt><dd><code>{{ current_provenance.git_branch }}</code></dd></div>
+        <div><dt>Tracked tree dirty</dt><dd>{{ current_provenance.git_dirty|yesno }}</dd></div>
+        <div><dt>Captured</dt><dd>{{ current_provenance.captured_at|date }}</dd></div>
+      </dl>
+      <p class="detail-note">{{ current_provenance.note }}</p>
+    </article>
+  </div>
+</section>
+
+<section class="section shell" id="screenshots">
+  <div class="section-head">
+    <p class="section-index">02 / The screenshots</p>
+    <h2>Captured inside the guest.</h2>
+  </div>
+  <div class="live-shot-grid">
+    {% for shot in current_screenshots %}
+    <figure class="live-shot">
+      <img src="{{ shot.path }}" alt="{{ shot.caption }}" loading="lazy" width="{{ shot.width or 1257 }}" height="{{ shot.height or 799 }}">
+      <figcaption>
+        <span>{{ shot.caption }}</span>
+        <span class="mono">{{ shot.width }}×{{ shot.height }}</span>
+      </figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  <p class="source-note">
+    The guest browser produced these images. The CDP gateway was unavailable, so no
+    host-attached CDP session is claimed.
+  </p>
+</section>
+
+<section class="section shell" id="defect">
+  <div class="section-head">
+    <p class="section-index">03 / The defect</p>
+    <h2>{{ current_defect.title or "Coupon SAVE20 can be stacked without limit" }}</h2>
+  </div>
+  <div class="result-layout">
+    <article class="defect-card">
+      <div class="defect-card-top">
+        <span class="status-chip status-succeeded">{{ current_outcome.classification or "confirmed reproducible defect" }}</span>
+        <span class="micro-label">severity {{ current_defect.severity or "high" }}</span>
+      </div>
+      <p>{{ current_defect.description }}</p>
+      <div class="behavior-grid">
+        <div>
+          <span class="micro-label">Expected</span>
+          <p>{{ current_defect.expected_behavior }}</p>
+        </div>
+        <div>
+          <span class="micro-label">Actual</span>
+          <p>{{ current_defect.actual_behavior }}</p>
+        </div>
+      </div>
+      <div class="steps-to-reproduce">
+        <span class="micro-label">Steps to reproduce</span>
+        <ol>
+          {% for step in current_defect.steps_to_reproduce or [] %}
+          <li>{{ step }}</li>
+          {% endfor %}
+        </ol>
+      </div>
+    </article>
+    <div class="result-side">
+      <div class="summary-card">
+        <span class="micro-label">Live outcome</span>
+        <dl>
+          <div><dt>Success</dt><dd>{{ current_outcome.success|yesno }}</dd></div>
+          <div><dt>Classification</dt><dd><code>{{ current_outcome.classification }}</code></dd></div>
+          <div><dt>Wall clock</dt><dd>{{ current_outcome.wall_clock_s|seconds }}</dd></div>
+          <div><dt>Scope</dt><dd>{{ current.scope }}</dd></div>
+        </dl>
+      </div>
+      <div class="summary-card">
+        <span class="micro-label">Evidence hashes</span>
+        <ul class="hash-list">
+          {% for name, item in current_evidence.items() %}
+            {% if item is mapping and item.sha256 %}
+            <li><span>{{ name }}</span><code>{{ item.sha256[:16] }}…</code></li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section shell" id="recovery">
+  <div class="section-head">
+    <p class="section-index">04 / The recovery</p>
+    <h2>503 is a state.<br><span class="muted">Not a defect claim.</span></h2>
+  </div>
+  <p class="section-lede">
+    At step 7 the checkout returned HTTP 503. FlowScout did not classify that as a
+    product defect. It deleted the failed sandbox, created a clean replacement,
+    reset the fixture, and retried the step.
+  </p>
+  <div class="recovery-grid">
+    <article class="recovery-card">
+      <span class="recovery-step">FAILED</span>
+      <h3>{{ failed_sandbox.name }}</h3>
+      <dl>
+        <div><dt>Step</dt><dd>{{ recovery_failure.step }}</dd></div>
+        <div><dt>HTTP</dt><dd class="warn">{{ recovery_failure.http_status }}</dd></div>
+        <div><dt>Defect claim</dt><dd>{{ recovery_failure.defect_claim|yesno }}</dd></div>
+        <div><dt>Deleted</dt><dd class="ok">{{ failed_sandbox.cleanup_ok|yesno }}</dd></div>
+      </dl>
+      <p>{{ recovery_failure.message }}</p>
+    </article>
+    <div class="recovery-arrow" aria-hidden="true">→</div>
+    <article class="recovery-card">
+      <span class="recovery-step">POLICY</span>
+      <h3>fresh</h3>
+      <p>
+        Delete the failed sandbox, create a clean replacement, and reset the
+        application fixture. This is not a VM snapshot rollback.
+      </p>
+      <dl>
+        <div><dt>Replacement</dt><dd><code>{{ replacement_sandbox.name }}</code></dd></div>
+        <div><dt>Boot to ready</dt><dd>{{ replacement_sandbox.boot_to_ready_s|seconds }}</dd></div>
+      </dl>
+    </article>
+    <div class="recovery-arrow" aria-hidden="true">→</div>
+    <article class="recovery-card">
+      <span class="recovery-step">RETRY</span>
+      <h3>{{ recovery_retry.classification }}</h3>
+      <dl>
+        <div><dt>Success</dt><dd class="ok">{{ recovery_retry.success|yesno }}</dd></div>
+        <div><dt>Wall clock</dt><dd>{{ recovery_retry.wall_clock_s|seconds }}</dd></div>
+        <div><dt>Replacement deleted</dt><dd class="ok">{{ replacement_sandbox.cleanup_ok|yesno }}</dd></div>
+      </dl>
+      <p>{{ replacement_sandbox.delete_confirmation }}</p>
+    </article>
+  </div>
+
+  <div class="recovery-events">
+    <div class="section-subhead">
+      <p class="section-index">Recovery timeline</p>
+      <span class="micro-label">{{ recovery_events|length }} recorded events</span>
+    </div>
+    <ol class="event-timeline">
+      {% for event in recovery_events %}
+      <li class="{% if event.event == 'failure' %}is-failure{% elif event.event == 'sandbox_recreated' %}is-recovery{% endif %}">
+        <span class="event-time">{{ event.ts|date }}</span>
+        <code>{{ event.event }}</code>
+        <span class="event-state">{{ event.state }}</span>
+        <span class="event-detail">{{ event.detail }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+
+<section class="section shell" id="provenance">
+  <div class="section-head">
+    <p class="section-index">05 / The provenance</p>
+    <h2>Which code produced this.</h2>
+  </div>
+  <div class="provenance-grid">
+    <article class="detail-card">
+      <span class="micro-label">Current live run</span>
+      <dl class="detail-list">
+        <div><dt>Commit</dt><dd><code>{{ current_provenance.git_commit }}</code></dd></div>
+        <div><dt>Branch</dt><dd><code>{{ current_provenance.git_branch }}</code></dd></div>
+        <div><dt>Dirty</dt><dd>{{ current_provenance.git_dirty|yesno }}</dd></div>
+        <div><dt>Untracked files</dt><dd>{{ current_provenance.git_untracked_count if current_provenance.git_untracked_count is not none else "not captured" }}</dd></div>
+        <div><dt>Captured</dt><dd>{{ current_provenance.captured_at|date }}</dd></div>
+      </dl>
+      <p class="detail-note">{{ current_provenance.note }}</p>
+    </article>
+    <article class="detail-card">
+      <span class="micro-label">Recovery run</span>
+      <dl class="detail-list">
+        <div><dt>Commit</dt><dd><code>{{ recovery_provenance.git_commit }}</code></dd></div>
+        <div><dt>Branch</dt><dd><code>{{ recovery_provenance.git_branch }}</code></dd></div>
+        <div><dt>Dirty</dt><dd>{{ recovery_provenance.git_dirty|yesno }}</dd></div>
+        <div><dt>Untracked files</dt><dd>{{ recovery_provenance.git_untracked_count if recovery_provenance.git_untracked_count is not none else "not captured" }}</dd></div>
+        <div><dt>Captured</dt><dd>{{ recovery_provenance.captured_at|date }}</dd></div>
+      </dl>
+      <p class="detail-note">{{ recovery_provenance.note }}</p>
+    </article>
+  </div>
+</section>
+
+<section class="section shell" id="limits">
+  <div class="section-head">
+    <p class="section-index">06 / The limits</p>
+    <h2>What this run does not prove.</h2>
+  </div>
+  <div class="limits-grid">
+    <article class="limits-card">
+      <span class="micro-label">Current live run</span>
+      <ul>
+        {% for item in current_limitations %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+    <article class="limits-card">
+      <span class="micro-label">Recovery run</span>
+      <ul>
+        {% for item in recovery_limitations %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="section shell" id="raw">
+  <div class="section-head">
+    <p class="section-index">07 / The raw files</p>
+    <h2>Inspect, don't trust.</h2>
+  </div>
+  <div class="raw-grid">
+    {% for link in raw_links %}
+    <a class="raw-link" href="{{ link.href }}">
+      <span>{{ link.label }}</span>
+      <code>{{ link.path }}</code>
+      <span aria-hidden="true">↗</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section shell" id="history">
+  <details class="history-details">
+    <summary>
+      <span class="section-index">08 / Historical and quarantined evidence</span>
+      <span class="micro-label">kept for audit, not current verification</span>
+    </summary>
+    <div class="history-grid">
+      <div>
+        <h3>Historical</h3>
+        <ul class="history-list">
+          {% for item in historical %}
+          <li>
+            <div><code>{{ item.status }}</code><span>{{ item.note }}</span></div>
+            {% if item.href %}<a href="{{ item.href }}">open <span aria-hidden="true">↗</span></a>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <h3>Quarantined</h3>
+        <ul class="history-list">
+          {% for item in quarantined %}
+          <li>
+            <div><code>{{ item.status }}</code><span>{{ item.note }}</span></div>
+            {% if item.href %}<a href="{{ item.href }}">open <span aria-hidden="true">↗</span></a>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </details>
+</section>
+
+<section class="section shell next-section">
+  <div>
+    <p class="section-index">Next</p>
+    <h2>See the ten steps that produced the defect.</h2>
+    <p>The recorded mock replay shows the full action log, test matrix, and lifecycle trace.</p>
+  </div>
+  <div class="next-actions">
+    <a class="button button-primary" href="/demo">Replay the recorded run <span aria-hidden="true">→</span></a>
+    <a class="button button-ghost" href="/ops">Open the operational dashboard</a>
+  </div>
+</section>
+{% endblock %}

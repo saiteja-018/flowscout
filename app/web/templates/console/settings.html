@@ -1,0 +1,86 @@
+{% extends "console/base.html" %}
+{% from "console/_macros.html" import mode_chip, status_chip %}
+{% block title %}Settings · FlowScout{% endblock %}
+{% block eyebrow %}Configuration{% endblock %}
+{% block heading %}Settings.{% endblock %}
+{% block subheading %}Read-only runtime configuration. Secrets are never rendered in this console.{% endblock %}
+
+{% block content %}
+<div class="layout-two">
+  <section class="panel">
+    <header class="panel-head"><div><h2>Runtime</h2><p>Effective configuration from the environment.</p></div></header>
+    <dl class="fact-list fact-list-lg">
+      <div><dt>QA store backend</dt><dd><span class="chip is-muted">{{ store_backend }}</span></dd></div>
+      <div><dt>Celesto mode</dt><dd>{{ mode_chip(config.celesto_mode) }}</dd></div>
+      <div><dt>Live configured</dt><dd>{{ status_chip('succeeded' if config.live_configured else 'failed', 'Yes' if config.live_configured else 'No') }}</dd></div>
+      <div><dt>Live authorization</dt><dd>Required per run</dd></div>
+      <div><dt>LLM planner</dt><dd>{{ 'Configured' if config.planner_configured else 'Not configured (heuristic fallback)' }}</dd></div>
+      <div><dt>Sandbox size</dt><dd class="mono">{{ config.celesto_size }}</dd></div>
+      <div><dt>Sandbox image</dt><dd class="mono">{{ config.celesto_image }}</dd></div>
+      <div><dt>Template</dt><dd class="mono">{{ config.celesto_template }}</dd></div>
+      <div><dt>Visible browser</dt><dd>{{ 'Yes' if config.visible_browser else 'No (headless)' }}</dd></div>
+      <div><dt>Default exploration steps</dt><dd>{{ config.default_max_steps }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <header class="panel-head"><div><h2>Store contents</h2><p>What is persisted right now.</p></div></header>
+    <div class="baseline-stats baseline-stats-wide">
+      <div><strong>{{ stats.projects }}</strong><span>projects</span></div>
+      <div><strong>{{ stats.runs }}</strong><span>runs</span></div>
+      <div><strong>{{ stats.test_cases }}</strong><span>tests</span></div>
+      <div><strong>{{ stats.test_results }}</strong><span>results</span></div>
+    </div>
+    <p class="muted small">In production, set <code>FLOWSCOUT_CONSOLE_STORE=postgres</code> and a reachable <code>DATABASE_URL</code>. The schema is additive to the existing run ledger. A local development store persists real execution data in <code>reports/console/store.json</code> and is labelled as <strong>local</strong> everywhere.</p>
+  </section>
+</div>
+
+<div class="layout-two">
+  <section class="panel">
+    <header class="panel-head"><div><h2>Protected resources</h2><p>Never deleted by this console.</p></div></header>
+    {% if config.protected_ids %}
+    <ul class="plain-list mono">
+      {% for item in config.protected_ids %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No protected IDs are configured. Set <code>CELESTO_KEEP_COMPUTER_IDS</code> before live runs.</p>
+    {% endif %}
+    <div class="panel-note">
+      <strong>Cleanup is mandatory</strong>
+      <p>Every run attempts provider-confirmed deletion in <code>finally</code>. A deletion that is not confirmed marks the run failed and adds a high-severity cleanup issue.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header class="panel-head"><div><h2>Target policy</h2><p>Applied before any browser launch.</p></div></header>
+    <dl class="fact-list">
+      <div><dt>Allowed schemes</dt><dd><code>http</code>, <code>https</code></dd></div>
+      <div><dt>Live ports</dt><dd><code>80</code>, <code>443</code></dd></div>
+      <div><dt>Live blocked</dt><dd>Loopback, private, link-local, reserved, metadata</dd></div>
+      <div><dt>Mock targets</dt><dd>Loopback/private allowed for the bundled demo; metadata, link-local, reserved always blocked</dd></div>
+      <div><dt>DNS</dt><dd>Live mode requires every resolved address to be public</dd></div>
+      <div><dt>Allowlist</dt><dd>{% if config.allowlist %}<span class="mono small">{{ config.allowlist | join(', ') }}</span>{% else %}<span class="muted">Not set</span>{% endif %}</dd></div>
+      <div><dt>Credentials in URL</dt><dd>Rejected</dd></div>
+    </dl>
+    <p class="muted small">Set <code>FLOWSCOUT_TARGET_ALLOWLIST</code> to a comma-separated host list to restrict runs further.</p>
+  </section>
+</div>
+
+<section class="panel">
+  <header class="panel-head"><div><h2>Environment reference</h2><p>No values are shown for secrets.</p></div></header>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Variable</th><th>Purpose</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td><code>CELESTO_MODE</code></td><td>Explicit <code>live</code> or <code>mock</code> adapter selection.</td><td>{{ config.celesto_mode }}</td></tr>
+        <tr><td><code>CELESTO_API_KEY</code></td><td>Celesto REST credential. Never rendered.</td><td>{{ 'Set' if config.live_configured else 'Missing or mode is mock' }}</td></tr>
+        <tr><td><code>CELESTO_KEEP_COMPUTER_IDS</code></td><td>Provider IDs excluded from cleanup.</td><td>{{ config.protected_ids | length }} configured</td></tr>
+        <tr><td><code>FLOWSCOUT_CONSOLE_STORE</code></td><td><code>auto</code>, <code>postgres</code>, <code>local</code>, or <code>memory</code>.</td><td>{{ store_backend }}</td></tr>
+        <tr><td><code>FLOWSCOUT_VISIBLE_BROWSER</code></td><td>Run the guest Chromium headed where a display exists.</td><td>{{ 'Enabled' if config.visible_browser else 'Disabled' }}</td></tr>
+        <tr><td><code>FLOWSCOUT_EXPLORE_STEPS</code></td><td>Default bounded exploration budget (3–12).</td><td>{{ config.default_max_steps }}</td></tr>
+        <tr><td><code>LLM_BASE_URL</code>, <code>LLM_API_KEY</code>, <code>LLM_MODEL</code></td><td>Optional planner. Candidates are still schema-validated.</td><td>{{ 'Configured' if config.planner_configured else 'Not configured' }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

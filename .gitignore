@@ -43,6 +43,9 @@ test-results/
 # Generated artifacts (keep reports/ structure but ignore temp output)
 *.pyc
 
+# QA console runtime store and per-run evidence (never commit)
+reports/console/
+
 # Docker
 .docker/
 

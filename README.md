@@ -11,7 +11,7 @@ FlowScout is a browser QA agent for small SaaS teams that need to reproduce a
 checkout defect, generate tests for it, and prove what happened in the sandbox.
 It ships with a deterministic ShopDemo target, an optional LLM planner that
 proposes each step from a validated candidate set, a Celesto Cloud adapter, a
-PostgreSQL run ledger, a Flight Deck dashboard, and a recorded evaluation.
+PostgreSQL run ledger, a server-rendered QA console, and a recorded evaluation.
 
 ![Live guest-browser run: six SAVE20 applications produce a -$25.99 total](reports/live-evidence/live-visible-step-09-2026-11-07.jpg)
 
@@ -92,15 +92,21 @@ not hidden behind a terminal transcript.
          v
 +------------------+       +-----------------------------+
 | FastAPI control  |------>| PostgreSQL run ledger      |
-| plane + reports  |       | seeded + degraded reads    |
-+------------------+       +-----------------------------+
+| plane + console  |       | seeded + degraded reads    |
++--------+---------+       +-----------------------------+
          |
+         | committed reports/evidence (read-only)
          v
-+------------------+
-| Flight Deck      |
-| evidence + runs  |
-+------------------+
++------------------+       +-----------------------------+
+| FlowScout QA     |       | /console dashboard, runs,  |
+| console          |       | projects, tests, reports   |
+| /console         |       | evidence + cleanup status  |
++------------------+       +-----------------------------+
 ```
+
+The console is the only product surface. It reads the QA store and committed
+evidence, and it never needs cloud credentials for mock runs. The retired
+public-site URLs redirect to `/console`.
 
 The implementation is split into small modules:
 
@@ -123,7 +129,9 @@ The implementation is split into small modules:
   evidence truthfulness.
 - `app/guest_healthcheck.py` - stdlib-only health probe uploaded into guests.
 - `app/main.py` - API, PostgreSQL ledger, degraded reads, write rejection,
-  dashboard, static evidence.
+  console mount, legacy redirects, static reports, and app wiring.
+- `app/console.py` - console pages, run/regression APIs, reports, evidence.
+- `app/web/` - Jinja2 templates and static assets for the console.
 
 ## How I used Celesto
 
@@ -568,8 +576,9 @@ still returns HTTP 501.
 python -m pytest -q
 ```
 
-Current suite: **180 passing tests**. It covers API contracts, degraded reads,
-ledger write rejection, target fixture behavior, coupon arithmetic, selector
+Current suite: **233 passing tests**. It covers API contracts, degraded reads,
+ledger write rejection, console routes and legacy redirects, console assets,
+target fixture behavior, coupon arithmetic, selector
 and URL validation, command policy (including the exact-match deploy exception
 and chunked upload redirection), REST client behaviour against a scripted
 backend (429 retry, CDP warm-up, publish/delete), planner contract and
@@ -579,8 +588,11 @@ cleanup on failure/interrupt, ownership-registry fail-closed and scoped-reclaim
 behaviour, atomic evidence writes, report schemas and verifier arithmetic,
 runtime source hashes, live-evidence index/quarantine consistency, git
 provenance capture, walkthrough conversion (ffmpeg capability detection and
-retry), and the reproducible live runner (record construction, cleanup
-confirmation, recovery events, and transactional promotion).
+retry), the reproducible live runner (record construction, cleanup
+confirmation, recovery events, and transactional promotion), URL/SSRF policy,
+console persistence, structured test validation, demo coupon probing,
+regression PASS/FAIL and newly-failing/fixed semantics, console routes, the
+live authorization gate, evidence path containment, and report downloads.
 
 CI runs that suite plus a two-run mock smoke test that must produce a valid MP4
 walkthrough. The smoke job installs ffmpeg and skips Playwright's VP9/WebM-only
@@ -597,7 +609,123 @@ npx playwright test tests/generated/coupon_stacking_test.spec.ts --config=playwr
 The regression spec expects `FLOWSCOUT_TEST_MODE=fixed`. The four-case matrix
 in the demo runner is the authoritative cross-check.
 
-### API and dashboard
+### API and health
+
+The console is the only UI. The retired public-site URLs redirect to it:
+
+| Route | Purpose |
+|---|---|
+| `/` | Redirects to `/console` (HTTP 307) |
+| `/demo`, `/live`, `/ops`, `/dashboard` | Retired public-site URLs; redirect to `/console` (HTTP 307) |
+| `/health` | Health check used by Docker and Render |
+| `/api/runs` | Run ledger API |
+| `/shop/` | Deterministic ShopDemo target used by console runs |
+
+## QA Console (`/console`)
+
+The FlowScout QA console at `/console` is the only product surface. The retired
+public-site URLs redirect here.
+
+| Route | Purpose |
+|---|---|
+| `/console` | Dashboard: real run counts, saved tests, issues, test pass rate, recent runs |
+| `/console/new` | Start an exploration against a URL |
+| `/console/projects` | Projects created from submitted targets |
+| `/console/tests` | Saved structured regression tests |
+| `/console/regression` | Run saved tests against a fresh sandbox |
+| `/console/runs` | Run history |
+| `/console/runs/{run_id}` | Actions, issues, screenshots, logs, cleanup confirmation |
+| `/console/reports` | Report index |
+| `/console/reports/{run_id}` | Evidence-backed QA report |
+| `/console/runs/{run_id}/report.json` | Downloadable JSON report |
+| `/console/settings` | Backend, live gate, planner, and protected-sandbox status |
+
+The console is a working live workflow, not a recorded replay:
+
+1. Submit a target URL. It is normalized and validated before a run exists.
+2. The service creates a real sandbox (live) or starts a real host Chromium
+   session (mock), then explores same-origin links, forms, and interactive
+   elements through validated `BrowserAction` objects.
+3. Issues, screenshots, browser logs, action outcomes, and cleanup status are
+   recorded as the run progresses.
+4. Structured tests are generated and saved with a test ID, name, description,
+   actions, expected results, assertions, and creation timestamp. Every action
+   is re-validated against the approved schema; generated tests are data, never
+   arbitrary code.
+5. A regression run loads the saved tests, creates a fresh sandbox, executes
+   them with Playwright, compares assertions, records PASS/FAIL and failure
+   screenshots, and reports newly failing or fixed tests versus the previous
+   regression run.
+6. Reports include totals, duration, issues, screenshots, logs, generated tests,
+   and failed-test inspection.
+
+**Persistence.** `FLOWSCOUT_CONSOLE_STORE` selects the backend explicitly:
+`postgres` (production), `local` (file-backed development store at
+`reports/console/store.json`), or `memory` (tests only). `auto` tries PostgreSQL
+and falls back to the local store only when the database is unreachable. The
+Settings page labels the active backend; the console never fabricates a run to
+make an empty dashboard look populated. The PostgreSQL schema is additive and
+lives beside the existing run ledger.
+
+```powershell
+$env:FLOWSCOUT_CONSOLE_STORE = "local"
+$env:FLOWSCOUT_LEDGER = "memory"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
+```
+
+Open `http://127.0.0.1:8080/console/new` and submit
+`http://127.0.0.1:8080/shop/` in mock mode for the bundled demo.
+
+**Mock and live boundaries.** Mock mode uses a real host Chromium and a mock
+sandbox lifecycle. It is labeled as mock everywhere and may reach the bundled
+loopback `/shop/` demo; metadata, link-local, and reserved addresses remain
+blocked. Live mode requires all three of `CELESTO_MODE=live`, a real
+`CELESTO_API_KEY`, and an explicit `authorize_live` flag on the run request.
+Missing authorization returns 403; missing live configuration returns 409. There
+is no silent fallback from live to mock. Live runs are serialized, consume
+Celesto credits, and the free trial allows two new sandboxes per hour.
+
+**Sandbox lifecycle.** Every live run creates a fresh Celesto sandbox, launches
+Chromium through the verified in-guest Playwright path, and attempts deletion in
+`finally`. Deletion is confirmed through Celesto and recorded on the run; a
+failed cleanup is surfaced, not hidden. IDs in `CELESTO_KEEP_COMPUTER_IDS`
+(including `cmp_3e12f5354e89`) are never touched.
+
+**Bundled demo probe.** When, and only when, mock/local mode targets the bundled
+loopback `/shop/` fixture, the explorer runs a scoped duplicate-coupon probe. It
+applies `SAVE20` twice through the same validated action schema, detects the
+documented coupon-stacking defect, captures a screenshot, and generates a real
+regression test that expects the second application to be rejected. The probe
+does not run against public sites and does not give the planner new powers.
+
+**Safety controls.** URL validation rejects credentials, non-HTTP schemes,
+private/metadata/link-local addresses (metadata stays blocked even in local
+mode), and restricts public live targets to ports 80/443. Selectors are limited
+to stable `data-testid`, simple `id`, or short text forms; session-only
+`data-flowscout-ref` selectors are rejected for saved tests. Destructive,
+payment, and account actions are denylisted. AI output can only choose from
+validated actions and is never executed as code. Live credentials are read from
+the environment and are never rendered into a page or API response. Mock mode is
+a local-development surface: it intentionally permits loopback/private targets
+for the bundled demo, so do not expose it on an untrusted public host. The
+Docker image ships Chromium and its system libraries so mock console runs work;
+the console is still not a public execution service.
+
+**Honest limitations.** The console's end-to-end workflow has been validated in
+mock mode against the bundled ShopDemo only: exploration detects the coupon
+issue, generates four unique tests, deduplicates them on re-exploration, and
+regression runs show 3 PASS / 1 FAIL with a failure screenshot and confirmed
+cleanup. Live Celesto console runs are implemented but were not executed while
+building this console because they require explicit authorization and credit
+spend. A read-only Celesto API check (list computers) confirmed the configured
+credentials and connection; it created no sandbox and spent no credits. Only the
+protected sandbox `cmp_3e12f5354e89` was present at that check. Arbitrary
+public-website compatibility is unverified; the initial scope is public, no-login
+pages. The demo fixture starts broken, so the default regression baseline
+already fails the coupon test; the PASS→FAIL `newly_failing` transition is
+covered by unit tests rather than this demo. The PostgreSQL console backend was
+exercised in the Compose stack, including persistence across an API restart;
+host-level validation used the local file-backed store.
 
 Memory-backed local demo:
 
@@ -613,7 +741,7 @@ $env:DATABASE_URL = "postgresql://ledger:ledger@localhost:5432/ledger"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
-Open `http://127.0.0.1:8080/` for the Flight Deck. Examples:
+Open `http://127.0.0.1:8080/console` for the QA console. Examples:
 
 ```powershell
 curl.exe http://127.0.0.1:8080/health
@@ -642,10 +770,79 @@ invalid `execution_target` 400, dashboard, static reports, persistence across
 an API restart, and degraded seed-only reads plus write rejection when
 PostgreSQL is stopped. If host port 8080 is in use, set `API_PORT=18080`.
 
+The API image includes Chromium, so `/console` mock runs work in Compose too.
+The console store uses the same PostgreSQL service (`FLOWSCOUT_CONSOLE_STORE`
+defaults to `postgres`) and survives an API restart. The `console_data` named
+volume holds screenshots and reports under `/app/reports/console`, so evidence
+also survives container recreation. Compose reads `.env`; for local mock use,
+set `CELESTO_MODE=mock` and leave `CELESTO_API_KEY` empty.
+
+### Render deployment
+
+[`render.yaml`](render.yaml) defines the public deployment as a Docker web
+service on Render's free plan (Oregon), with `FLOWSCOUT_LEDGER=memory`, a
+`/health` check, and auto-deploy from the repository.
+
+The public deployment is configured without live Celesto execution:
+
+- `uvicorn` binds `$PORT`, which Render supplies (`Dockerfile`).
+- The Celesto SDK is not installed and no `CELESTO_API_KEY` is configured.
+- Live runs stay fail-closed: no key means an authorized live request gets 409.
+- The committed `reports/` tree is baked into the image and served at
+  `/reports/...`, so report and evidence links work offline.
+- The image also ships Chromium for local mock console runs. Do not use a public
+  Render service as a mock execution surface: mock mode intentionally permits
+  loopback/private targets for the bundled demo.
+
+Deploy by connecting the repository in Render and selecting the existing
+`render.yaml`, or run the image locally:
+
+```powershell
+docker build -t flowscout .
+docker volume create flowscout_console
+docker run --rm -p 8080:8080 `
+  -v flowscout_console:/app/reports/console `
+  -e FLOWSCOUT_LEDGER=memory `
+  -e FLOWSCOUT_CONSOLE_STORE=local `
+  flowscout
+```
+
+**Evidence persistence.** Screenshots, downloaded reports, and the local console
+store live under `/app/reports/console`. That path is inside the container
+filesystem unless it is mounted. Rebuilding the image or recreating the
+container without a volume therefore deletes old evidence while PostgreSQL (or
+another store) may still hold the run metadata. Mount a named volume at
+`/app/reports/console` for any container whose evidence you want to keep.
+Compose already does this with the `console_data` volume; `docker compose down`
+keeps it, while `docker compose down -v` deletes it. Runs whose files are
+missing are shown with an **Evidence files missing** warning instead of broken
+image links.
+
+The Docker image was verified end to end: health and all console routes, a mock
+exploration and two regression runs against the bundled `/shop/` fixture,
+deduplicated tests, inline evidence, confirmed mock cleanup, and the full
+233-test suite inside the container as the non-root `flowscout` user. Evidence
+was also verified to survive an API restart and a forced container recreation
+when the `console_data` volume is mounted. The console's relative "Use ShopDemo"
+target assumes the published port matches the container port (8080); with a
+different host port, submit the absolute `http://127.0.0.1:8080/shop/` URL
+instead.
+
+Free-plan services sleep after inactivity, so the first request after a pause
+can be slow. A fresh live Celesto run remains an admin-only, opt-in repository
+action (`scripts/run_live_single.py`), never a public website route.
+
 ## Repository map
 
 ```text
-app/main.py                 API, ledgers, dashboard
+app/main.py                 API, ledgers, console mount, legacy redirects
+app/console.py              /console pages, run/regression APIs, reports, evidence
+app/qa_service.py           console orchestration, live gate, sandbox lifecycle
+app/qa_store.py             console persistence (Postgres/local/memory)
+app/site_explorer.py        public-site exploration, test generation, regression
+app/url_policy.py           URL normalization and SSRF policy
+app/guest_browser_worker.py in-guest Playwright actions and diagnostics
+app/web/                    console templates (Jinja2) and static assets
 app/qa_agent.py             browser workflow, planner hooks, specs, containment
 app/llm_planner.py          optional LLM planner (candidate-set contract)
 app/ownership.py            local ownership registry, scoped reclaim policy
@@ -669,6 +866,8 @@ logs/ownership/registry.json local owned-computer registry (gitignored)
 demo/walkthrough.mp4        real browser recording of the workflow
 seeds/01_runs.sql           PostgreSQL seed
 .github/workflows/ci.yml    tests + verifier + two-run mock smoke
+Dockerfile                  Docker image with Chromium ($PORT, /health)
+render.yaml                 Render free-plan Docker web service
 LICENSE                     MIT license
 ```
 

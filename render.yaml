@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: flowscout
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: FLOWSCOUT_LEDGER
+        value: memory
+      - key: PYTHONUNBUFFERED
+        value: "1"

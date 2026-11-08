@@ -61,16 +61,34 @@ class ActionType(str, Enum):
     FILL = "fill"
     ASSERT_TEXT = "assert_text"
     ASSERT_ATTRIBUTE = "assert_attribute"
+    ASSERT_TITLE = "assert_title"
+    ASSERT_URL = "assert_url"
+    ASSERT_VALUE = "assert_value"
+    ASSERT_NO_CONSOLE_ERRORS = "assert_no_console_errors"
+    ASSERT_NO_FAILED_REQUESTS = "assert_no_failed_requests"
     READ_TEXT = "read_text"
     READ_ATTRIBUTE = "read_attribute"
     EXISTS = "exists"
     WAIT_ATTRIBUTE_CHANGE = "wait_attribute_change"
+    SNAPSHOT = "snapshot"
     SCREENSHOT = "screenshot"
     WAIT = "wait"
 
 
+# Selectors are intentionally a tiny, auditable subset.  The explorer assigns
+# short-lived ``data-flowscout-ref`` attributes for its own read-only snapshots;
+# saved regression tests only use stable selectors (test id, id, name,
+# placeholder, aria-label, role/name, body, or exact text).
 _SELECTOR_RE = re.compile(
-    r"""^(?:\[data-testid=(?:'[a-z0-9-]+'|"[a-z0-9-]+")\]|#[A-Za-z][A-Za-z0-9_-]{0,80}|text=[^{}\n]{1,100})$"""
+    r"""^(?:
+        \[data-testid=(?:'[a-z0-9-]+'|"[a-z0-9-]+")\] |
+        \[data-flowscout-ref=(?:'e[0-9]{1,3}'|"e[0-9]{1,3}")\] |
+        \[(?:name|placeholder|aria-label)=(?:'[^'\n]{1,120}'|"[^"\n]{1,120}")\] |
+        role=(?:button|link|textbox|searchbox|combobox)\[name=(?:'[^'\n]{1,120}'|"[^"\n]{1,120}")\] |
+        \#[A-Za-z][A-Za-z0-9_-]{0,80} |
+        text=[^{}\n]{1,100}
+    )$""",
+    re.VERBOSE,
 )
 
 
@@ -95,6 +113,7 @@ class BrowserAction:
             ActionType.FILL,
             ActionType.ASSERT_TEXT,
             ActionType.ASSERT_ATTRIBUTE,
+            ActionType.ASSERT_VALUE,
             ActionType.READ_TEXT,
             ActionType.READ_ATTRIBUTE,
             ActionType.EXISTS,
@@ -117,6 +136,28 @@ class BrowserAction:
                 raise InvalidAction("navigate requires an absolute http(s) URL")
         if self.action_type == ActionType.ASSERT_TEXT and len(self.value) > 1000:
             raise InvalidAction("assertion text exceeds 1000 characters")
+        if self.action_type == ActionType.ASSERT_TITLE and not (
+            0 < len(self.value) <= 300
+        ):
+            raise InvalidAction("assert_title requires 1-300 characters")
+        if self.action_type == ActionType.ASSERT_URL:
+            parsed = urlparse(self.value)
+            if (
+                len(self.value) > 2048
+                or parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+            ):
+                raise InvalidAction("assert_url requires an absolute http(s) URL")
+        if self.action_type == ActionType.ASSERT_VALUE and len(self.value) > 500:
+            raise InvalidAction("assert_value exceeds 500 characters")
+        if self.action_type in {
+            ActionType.ASSERT_NO_CONSOLE_ERRORS,
+            ActionType.ASSERT_NO_FAILED_REQUESTS,
+            ActionType.SNAPSHOT,
+        } and (self.selector or self.value or self.attribute):
+            raise InvalidAction(
+                f"{self.action_type.value} does not accept selector/value/attribute fields"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {

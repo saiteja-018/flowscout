@@ -1,0 +1,107 @@
+{% extends "console/base.html" %}
+{% from "console/_macros.html" import status_chip, mode_chip, cleanup_chip, issue_card, result_card, screenshot_grid, log_list %}
+{% block title %}Report {{ run.run_id | short(18) }} · FlowScout{% endblock %}
+{% block eyebrow %}Report{% endblock %}
+{% block heading %}QA report.{% endblock %}
+{% block subheading %}{{ project.name if project else run.target_url }} · generated {{ run.finished_at | dt }}{% endblock %}
+{% block actions %}
+<button class="btn btn-ghost" type="button" data-print>Print</button>
+<a class="btn btn-ghost" href="/console/runs/{{ run.run_id }}/report.json">Download JSON</a>
+<a class="btn btn-primary" href="/console/runs/{{ run.run_id }}">Run detail</a>
+{% endblock %}
+
+{% block content %}
+<section class="report-sheet">
+  <header class="report-header">
+    <div>
+      <span class="eyebrow">FlowScout QA report</span>
+      <h2>{{ project.name if project else 'Website QA' }}</h2>
+      <a class="mono" href="{{ run.target_url }}" target="_blank" rel="noreferrer">{{ run.target_url }}</a>
+    </div>
+    <div class="report-header-meta">
+      {{ status_chip(run.status) }}
+      {{ mode_chip(run.mode) }}
+      {{ cleanup_chip(run) }}
+      <span class="mono small">{{ run.run_id }}</span>
+    </div>
+  </header>
+
+  {% if missing_evidence %}
+  <div class="alert alert-warn" role="alert">
+    <strong>Evidence files missing</strong>
+    <p>{{ missing_evidence }} screenshot(s) from this report are no longer on disk. Run the container with a persistent volume mounted at <code>/app/reports/console</code> so evidence survives image and container changes.</p>
+  </div>
+  {% endif %}
+
+  <div class="report-facts">
+    <div><span>Run kind</span><strong>{{ run.kind | titlecase }}</strong></div>
+    <div><span>Started</span><strong>{{ run.started_at | dt }}</strong></div>
+    <div><span>Finished</span><strong>{{ run.finished_at | dt }}</strong></div>
+    <div><span>Duration</span><strong>{{ run.duration_s | duration }}</strong></div>
+    <div><span>Sandbox</span><strong class="mono">{{ run.sandbox_name or '—' }}</strong></div>
+    <div><span>Provider ID</span><strong class="mono">{{ run.provider_id or '—' }}</strong></div>
+  </div>
+
+  <section class="report-section">
+    <h3>Summary</h3>
+    <div class="metrics metrics-compact">
+      <div class="metric"><span class="metric-label">Pages</span><strong class="metric-value">{{ run.summary.pages_visited | default(0) }}</strong></div>
+      <div class="metric"><span class="metric-label">Actions</span><strong class="metric-value">{{ run.summary.actions | default(0) }}</strong></div>
+      <div class="metric"><span class="metric-label">Issues</span><strong class="metric-value">{{ run.issues | length }}</strong></div>
+      <div class="metric"><span class="metric-label">Tests generated</span><strong class="metric-value">{{ run.generated_test_ids | length }}</strong></div>
+      {% if results %}
+      <div class="metric is-good"><span class="metric-label">Passed</span><strong class="metric-value">{{ run.summary.passed | default(0) }}</strong></div>
+      <div class="metric is-bad"><span class="metric-label">Failed</span><strong class="metric-value">{{ run.summary.failed | default(0) }}</strong></div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if results %}
+  <section class="report-section">
+    <h3>Regression results</h3>
+    <div class="result-stack">{% for result in results %}{{ result_card(result) }}{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  <section class="report-section">
+    <h3>Issues</h3>
+    {% if run.issues %}
+    <div class="issue-stack">{% for issue in run.issues %}{{ issue_card(issue) }}{% endfor %}</div>
+    {% else %}
+    <p class="muted">No issues detected in the explored pages.</p>
+    {% endif %}
+  </section>
+
+  {% if generated_tests %}
+  <section class="report-section">
+    <h3>Generated tests</h3>
+    <ul class="plain-list">
+      {% for test in generated_tests %}
+      <li><strong>{{ test.name }}</strong> <span class="muted">— {{ test.actions | length }} actions, {{ test.assertions | length }} assertions</span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section class="report-section">
+    <h3>Screenshots</h3>
+    {{ screenshot_grid(screenshots) }}
+  </section>
+
+  <section class="report-section">
+    <h3>Run log</h3>
+    {{ log_list(run.logs) }}
+  </section>
+
+  <section class="report-section">
+    <h3>Evidence metadata</h3>
+    <dl class="fact-list">
+      <div><dt>Cleanup</dt><dd>{{ run.cleanup_message or '—' }}</dd></div>
+      <div><dt>Cleanup confirmed</dt><dd>{{ 'Yes' if run.cleanup_ok is sameas true else ('No' if run.cleanup_ok is sameas false else '—') }}</dd></div>
+      <div><dt>Planner</dt><dd>{{ run.summary.planner_mode or '—' }}</dd></div>
+      <div><dt>Browser runtime</dt><dd>{{ run.summary.browser_runtime or '—' }}</dd></div>
+      <div><dt>Report generated</dt><dd>{{ now() | dt }}</dd></div>
+    </dl>
+  </section>
+</section>
+{% endblock %}

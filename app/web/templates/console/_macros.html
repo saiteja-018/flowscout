@@ -1,0 +1,184 @@
+{% macro status_chip(value, label=None) -%}
+<span class="chip {{ value | status_class }}"><span class="chip-dot"></span>{{ label or (value | titlecase) }}</span>
+{%- endmacro %}
+
+{% macro mode_chip(value) -%}
+<span class="chip chip-mode {% if value == 'live' %}is-live-mode{% else %}is-mock{% endif %}">{{ (value or 'unknown') | upper }}</span>
+{%- endmacro %}
+
+{% macro cleanup_chip(run) -%}
+{% if run.cleanup_ok is sameas true %}
+<span class="chip is-good"><span class="chip-dot"></span>Cleanup confirmed</span>
+{% elif run.cleanup_ok is sameas false %}
+<span class="chip is-bad"><span class="chip-dot"></span>Cleanup failed</span>
+{% elif run.status in ['queued', 'running'] %}
+<span class="chip is-live"><span class="chip-dot"></span>Sandbox active</span>
+{% else %}
+<span class="chip is-muted">No sandbox</span>
+{% endif %}
+{%- endmacro %}
+
+{% macro progress(value, tone='') -%}
+{% set pct = value | default(0) | int %}
+<div class="progress {{ tone }}" role="progressbar" aria-label="Run progress" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">
+  <span style="width: {{ pct }}%"></span>
+</div>
+{%- endmacro %}
+
+{% macro metric_card(label, value, hint='', tone='') -%}
+<div class="metric {{ tone }}">
+  <span class="metric-label">{{ label }}</span>
+  <strong class="metric-value">{{ value }}</strong>
+  {% if hint %}<span class="metric-hint">{{ hint }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro empty_state(title, message, href='', action='') -%}
+<div class="empty">
+  <span class="empty-mark" aria-hidden="true"></span>
+  <h3>{{ title }}</h3>
+  <p>{{ message }}</p>
+  {% if href %}<a class="btn btn-ghost" href="{{ href }}">{{ action or 'Continue' }}</a>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro run_table(runs, projects_by_id, empty_title='No runs yet', empty_message='Start a QA run against a public website.', empty_href='/console/new') -%}
+{% if runs %}
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th>Run</th><th>Project</th><th>Kind</th><th>Mode</th><th>Status</th><th>Progress</th><th>Duration</th><th>Started</th></tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      {% set project = projects_by_id.get(run.project_id) %}
+      <tr>
+        <td data-label="Run"><a class="mono-link" href="/console/runs/{{ run.run_id }}">{{ run.run_id | short(18) }}</a></td>
+        <td data-label="Project">
+          <span class="cell-main">{{ project.name if project else '—' }}</span>
+          <span class="cell-sub">{{ run.target_url | short(42) }}</span>
+        </td>
+        <td data-label="Kind"><span class="kind">{{ run.kind | titlecase }}</span></td>
+        <td data-label="Mode">{{ mode_chip(run.mode) }}</td>
+        <td data-label="Status">{{ status_chip(run.status) }}</td>
+        <td data-label="Progress">
+          <div class="cell-progress">
+            {{ progress(run.progress) }}
+            <span>{{ run.progress | percent }}</span>
+          </div>
+        </td>
+        <td data-label="Duration">{{ run.duration_s | duration }}</td>
+        <td data-label="Started"><span title="{{ run.created_at | dt('%Y-%m-%d %H:%M:%S') }}">{{ run.created_at | ago }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+{{ empty_state(empty_title, empty_message, empty_href, 'Start a run') }}
+{% endif %}
+{%- endmacro %}
+
+{% macro issue_card(issue) -%}
+<article class="issue">
+  <div class="issue-head">
+    <span class="severity {{ issue.severity | severity_class }}">{{ (issue.severity or 'low') | upper }}</span>
+    <span class="issue-cat">{{ issue.category | titlecase }}</span>
+    <span class="issue-step">{% if issue.step %}step {{ issue.step }}{% endif %}</span>
+  </div>
+  <h3>{{ issue.title }}</h3>
+  <p>{{ issue.description }}</p>
+  <div class="issue-foot">
+    <span class="mono">{{ issue.url | short(64) }}</span>
+    {% if issue.newly_failing %}<span class="chip is-bad">Newly failing</span>{% endif %}
+  </div>
+</article>
+{%- endmacro %}
+
+{% macro assertion_row(assertion) -%}
+<li class="assertion {{ assertion.status | status_class }}">
+  <span class="assertion-icon" aria-hidden="true">{% if assertion.status == 'passed' %}✓{% elif assertion.status == 'failed' %}✕{% else %}•{% endif %}</span>
+  <div>
+    <strong>{{ assertion.description or assertion.kind }}</strong>
+    {% if assertion.error %}<span class="assertion-error">{{ assertion.error }}</span>{% elif assertion.actual %}<span class="assertion-actual mono">{{ assertion.actual | short(120) }}</span>{% endif %}
+  </div>
+</li>
+{%- endmacro %}
+
+{% macro result_card(result) -%}
+<article class="result-card {{ result.status | status_class }}" id="result-{{ result.result_id }}">
+  <header class="result-head">
+    <div>
+      <span class="result-name">{{ result.test_name }}</span>
+      <span class="mono result-id">{{ result.test_id }}</span>
+    </div>
+    <div class="result-meta">
+      {% if result.newly_failing %}<span class="chip is-bad">Newly failing</span>{% endif %}
+      {% if result.fixed %}<span class="chip is-good">Fixed</span>{% endif %}
+      {{ status_chip(result.status) }}
+      <span class="duration">{{ result.duration_s | duration }}</span>
+    </div>
+  </header>
+  {% if result.error %}<p class="result-error">{{ result.error }}</p>{% endif %}
+  {% if result.assertions %}
+  <ul class="assertion-list">
+    {% for assertion in result.assertions %}{{ assertion_row(assertion) }}{% endfor %}
+  </ul>
+  {% endif %}
+  {% if result.actions %}
+  <details class="disclosure">
+    <summary>{{ result.actions | length }} executed action(s)</summary>
+    <ol class="action-list">
+      {% for row in result.actions %}
+      <li class="{{ 'is-good' if row.success else 'is-bad' }}">
+        <span class="action-index">{{ loop.index }}</span>
+        <span class="action-kind">{{ row.action.action_type if row.action else 'action' }}</span>
+        <span class="action-desc">{{ row.action.description if row.action else '' }}</span>
+        <span class="action-state">{{ 'ok' if row.success else 'failed' }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+  {% if result.screenshots %}
+  <div class="result-shots">
+    {% for shot in result.screenshots %}
+    <a class="thumb" href="/console/evidence/{{ result.run_id }}/{{ shot }}" target="_blank" rel="noreferrer">
+      <img src="/console/evidence/{{ result.run_id }}/{{ shot }}" alt="Failure screenshot for {{ result.test_name }}" loading="lazy">
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</article>
+{%- endmacro %}
+
+{% macro screenshot_grid(shots, empty='No screenshots captured.') -%}
+{% if shots %}
+<div class="shot-grid">
+  {% for shot in shots %}
+  <a class="shot" href="{{ shot.url }}" target="_blank" rel="noreferrer">
+    <img src="{{ shot.url }}" alt="{{ shot.caption }}" loading="lazy">
+    <span class="shot-caption">{{ shot.caption }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted small">{{ empty }}</p>
+{% endif %}
+{%- endmacro %}
+
+{% macro log_list(logs, empty='No log entries.') -%}
+{% if logs %}
+<ol class="log-list">
+  {% for log in logs[-80:] %}
+  <li class="log-{{ log.level | default('info') }}">
+    <span class="log-time">{{ log.ts | dt('%H:%M:%S') }}</span>
+    <span class="log-level">{{ log.level | default('info') | upper }}</span>
+    <span class="log-message">{{ log.message }}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="muted small">{{ empty }}</p>
+{% endif %}
+{%- endmacro %}

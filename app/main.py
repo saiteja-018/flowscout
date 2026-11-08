@@ -1,15 +1,20 @@
-"""FlowScout FastAPI control plane and Flight Deck dashboard.
+"""FlowScout FastAPI control plane and QA console.
 
-The API exposes an intentionally small run ledger:
+The API exposes an intentionally small run ledger and the console:
 
 * ``GET /health``
 * ``GET /api/runs``
 * ``POST /api/runs``
-* ``GET /`` and ``GET /dashboard``
+* ``GET /console`` and the other console pages
+* ``GET /`` redirects to ``/console``
+* legacy ``/demo``, ``/live``, ``/ops`` and ``/dashboard`` redirect to ``/console``
+
+The console is the only product surface. The retired public-site routes are
+kept as redirects so existing bookmarks do not 404.
 
 PostgreSQL is the production ledger. A read can degrade to a clearly marked
 snapshot containing the required seed record when the database is unreachable,
-because the dashboard should still explain its own state. A write never falls
+because the console should still explain its own state. A write never falls
 back to memory: if PostgreSQL is unavailable, ``POST /api/runs`` returns 503.
 Tests inject an explicit ``MemoryLedger`` through ``create_app``.
 """
@@ -20,6 +25,7 @@ import json
 import logging
 import os
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -28,16 +34,18 @@ import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
+from app.console import router as console_router
 from app.target_saas_app import router as shop_router
 
 logger = logging.getLogger("flowscout")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+WEB_DIR = Path(__file__).resolve().parent / "web"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 COMMANDS_PATH = PROJECT_ROOT / "logs" / "commands.jsonl"
 DEFAULT_DATABASE_URL = "postgresql://ledger:ledger@localhost:5432/ledger"
@@ -436,7 +444,10 @@ def _render_dashboard(data: dict[str, Any], *, degraded: bool) -> str:
       <div class="brand">FLOW<span>SCOUT</span> / FLIGHT DECK</div>
       <div class="sub">browser QA agent / run ledger / containment telemetry</div>
     </div>
-    <div class="truth">{_esc(truth_label)}</div>
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <a class="mono small" href="/" style="color:var(--acid);text-decoration:none">← Public site</a>
+      <div class="truth">{_esc(truth_label)}</div>
+    </div>
   </header>
   {degraded_banner}
 
@@ -525,12 +536,28 @@ def create_app(ledger: RunLedger | None = None) -> FastAPI:
         else:
             raise ValueError("FLOWSCOUT_LEDGER must be 'postgres' or 'memory'")
 
-    application = FastAPI(title="FlowScout Control Plane", version="1.0.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        manager = getattr(app.state, "qa_manager", None)
+        if manager is not None:
+            manager.shutdown()
+
+    application = FastAPI(title="FlowScout QA Console", version="1.0.0", lifespan=lifespan)
     application.state.ledger = selected_ledger
+    application.state.qa_store = None
+    application.state.qa_manager = None
     application.include_router(shop_router)
+    application.include_router(console_router)
 
     if REPORTS_DIR.is_dir():
         application.mount("/reports", StaticFiles(directory=str(REPORTS_DIR)), name="reports")
+    if WEB_DIR.is_dir():
+        application.mount(
+            "/static",
+            StaticFiles(directory=str(WEB_DIR / "static")),
+            name="static",
+        )
 
     @application.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -538,8 +565,9 @@ def create_app(ledger: RunLedger | None = None) -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; "
-            "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; connect-src 'self'; form-action 'self'; "
+            "base-uri 'none'; frame-ancestors 'none'"
         )
         return response
 
@@ -593,27 +621,16 @@ def create_app(ledger: RunLedger | None = None) -> FastAPI:
                 detail="Run ledger unavailable; creation was not persisted.",
             ) from None
 
-    @application.get("/", response_class=HTMLResponse)
-    def dashboard():
-        ledger_degraded = False
-        try:
-            selected_ledger.list_runs()
-        except LedgerUnavailable:
-            ledger_degraded = True
-        data = {
-            "reliability": _load_json("reliability.json"),
-            "lifecycle": _load_json("lifecycle.json"),
-            "containment": _load_json("containment.json"),
-            "failure_policy": _load_json("failure_policy.json"),
-            "problem": _load_json("problem.json"),
-            "commands": _load_jsonl(COMMANDS_PATH, limit=25),
-            "failure_trace": _load_jsonl(REPORTS_DIR / "failure_trace.jsonl", limit=30),
-        }
-        return HTMLResponse(_render_dashboard(data, degraded=ledger_degraded))
+    @application.get("/", response_class=RedirectResponse)
+    def root():
+        return RedirectResponse(url="/console", status_code=307)
 
-    @application.get("/dashboard", response_class=HTMLResponse)
-    def dashboard_alias():
-        return dashboard()
+    @application.get("/demo", response_class=RedirectResponse)
+    @application.get("/live", response_class=RedirectResponse)
+    @application.get("/ops", response_class=RedirectResponse)
+    @application.get("/dashboard", response_class=RedirectResponse)
+    def retired_public_site():
+        return RedirectResponse(url="/console", status_code=307)
 
     return application
 

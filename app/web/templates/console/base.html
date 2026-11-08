@@ -1,0 +1,123 @@
+{% from "console/_macros.html" import status_chip, mode_chip %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title }} · FlowScout{% endblock %}</title>
+  <meta name="description" content="FlowScout live AI browser QA and regression testing console.">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/console.css">
+  <script src="/static/console.js" defer></script>
+</head>
+<body class="console-body" data-page="{{ active }}">
+  <a class="skip-link" href="#console-main">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Console navigation">
+      <a class="side-brand" href="/console">
+        <span class="side-mark" aria-hidden="true"><span></span></span>
+        <span class="side-word">FLOW<span>SCOUT</span></span>
+      </a>
+      <div class="workspace">
+        <span class="workspace-label">Workspace</span>
+        <span class="workspace-name">QA Console</span>
+        <span class="workspace-mode">{{ mode_chip(config.celesto_mode) }}</span>
+      </div>
+
+      <nav class="side-nav" aria-label="Primary">
+        <span class="nav-label">Operate</span>
+        <a href="/console" class="nav-item {% if active == 'dashboard' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>
+          <span>Dashboard</span>
+        </a>
+        <a href="/console/new" class="nav-item {% if active == 'new' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7V4Z"/></svg>
+          <span>New QA run</span>
+        </a>
+        <a href="/console/projects" class="nav-item {% if active == 'projects' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></svg>
+          <span>Projects</span>
+        </a>
+        <a href="/console/tests" class="nav-item {% if active == 'tests' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v2h3v16H4V5h3V3Zm0 4H6v12h12V7h-1v2H7V7Zm2 5 2 2 4-4 1.4 1.4L11 17l-3.4-3.4L9 12Z"/></svg>
+          <span>Test cases</span>
+        </a>
+        <a href="/console/regression" class="nav-item {% if active == 'regression' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.4 5H2l3.5-4L9 9H6.7A6 6 0 1 0 12 6V4Zm-1 4h2v5l3 2-1 1.7-4-2.7V8Z"/></svg>
+          <span>Regression</span>
+        </a>
+        <span class="nav-label">Inspect</span>
+        <a href="/console/runs" class="nav-item {% if active == 'runs' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v2H4V5Zm0 6h16v2H4v-2Zm0 6h10v2H4v-2Z"/></svg>
+          <span>Run history</span>
+        </a>
+        <a href="/console/reports" class="nav-item {% if active == 'reports' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l4 4v16H6V2Zm7 2H8v14h8V7h-3V4Zm-4 7h6v2H9v-2Zm0 4h6v2H9v-2Z"/></svg>
+          <span>Reports</span>
+        </a>
+        <a href="/console/settings" class="nav-item {% if active == 'settings' %}is-active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3 .6 2.4a7 7 0 0 1 2.8 0L14 3h3l1 2.7c.6.4 1.2.9 1.7 1.5L22 6.6v3.1l-2.2 1.1a7 7 0 0 1 0 2.4L22 14.3v3.1l-2.3.6c-.5.6-1.1 1.1-1.7 1.5L17 22h-3l-.6-2.4a7 7 0 0 1-2.8 0L10 22H7l-1-2.7c-.6-.4-1.2-.9-1.7-1.5L2 18.4v-3.1l2.2-1.1a7 7 0 0 1 0-2.4L2 10.7V7.6l2.3-.6c.5-.6 1.1-1.1 1.7-1.5L7 3h3Zm2 5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg>
+          <span>Settings</span>
+        </a>
+      </nav>
+
+      <div class="side-foot">
+        <div class="side-status">
+          <span class="dot {% if config.live_configured %}is-on{% else %}is-off{% endif %}"></span>
+          <div>
+            <strong>{% if config.live_configured %}Celesto connected{% else %}Celesto not configured{% endif %}</strong>
+            <span>Store: {{ store_backend }}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <header class="mobile-bar">
+      <a class="side-brand" href="/console">
+        <span class="side-mark" aria-hidden="true"><span></span></span>
+        <span class="side-word">FLOW<span>SCOUT</span></span>
+      </a>
+      <button class="mobile-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="mobile-nav">Menu</button>
+    </header>
+    <nav class="mobile-nav" id="mobile-nav" hidden aria-label="Mobile navigation">
+      <a href="/console">Dashboard</a>
+      <a href="/console/new">New QA run</a>
+      <a href="/console/projects">Projects</a>
+      <a href="/console/tests">Test cases</a>
+      <a href="/console/regression">Regression</a>
+      <a href="/console/runs">Run history</a>
+      <a href="/console/reports">Reports</a>
+      <a href="/console/settings">Settings</a>
+    </nav>
+
+    <main class="main" id="console-main">
+      <header class="page-head">
+        <div class="page-head-copy">
+          <div class="eyebrow">{% block eyebrow %}QA Console{% endblock %}</div>
+          <h1>{% block heading %}{{ page_title }}{% endblock %}</h1>
+          <p class="page-sub">{% block subheading %}{% endblock %}</p>
+        </div>
+        <div class="page-actions">
+          {% block actions %}
+          <a class="btn btn-primary" href="/console/new">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7V4Z"/></svg>
+            New QA run
+          </a>
+          {% endblock %}
+        </div>
+      </header>
+
+      {% block content %}{% endblock %}
+
+      <footer class="console-footer">
+        <span>FlowScout QA Console</span>
+        <span class="footer-sep" aria-hidden="true">/</span>
+        <span>Backend: {{ store_backend }}</span>
+        <span class="footer-sep" aria-hidden="true">/</span>
+        <span>{% if config.celesto_mode == 'live' %}Live Celesto mode available{% else %}Mock mode only{% endif %}</span>
+        <a href="/console/reports">Evidence reports</a>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

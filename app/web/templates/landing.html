@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}FlowScout Flight Deck — browser QA that produces evidence{% endblock %}
+{% block description %}FlowScout reproduces a real coupon-stacking checkout defect, captures browser evidence, generates regression tests, and verifies sandbox cleanup.{% endblock %}
+{% block body_class %}page-landing{% endblock %}
+
+{% block content %}
+<section class="hero shell">
+  <div class="hero-copy">
+    <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Browser QA / evidence first</p>
+    <h1>A pass/fail<br>is not proof.</h1>
+    <p class="hero-lede">
+      FlowScout runs a ten-step checkout workflow inside an isolated browser sandbox.
+      It reproduces a real coupon-stacking defect, captures every action, generates
+      regression tests, and proves cleanup.
+    </p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="/demo">Replay the 10-step run <span aria-hidden="true">→</span></a>
+      <a class="button button-ghost" href="/live">Inspect live Celesto evidence</a>
+    </div>
+    <p class="hero-note">No credentials. No cloud spend. The public demo is a recorded mock run.</p>
+  </div>
+
+  <figure class="hero-visual">
+    <div class="visual-label"><span class="dot dot-live" aria-hidden="true"></span> RECORDED LIVE · CELESTO MICRO</div>
+    {% if live.current_hero %}
+    <img
+      src="{{ live.current_hero.path }}"
+      alt="Live checkout screenshot showing six SAVE20 applications and a total of negative $25.99"
+      width="{{ live.current_hero.width or 1257 }}"
+      height="{{ live.current_hero.height or 799 }}"
+    >
+    {% endif %}
+    <div class="visual-annotation annotation-total">
+      <span>PAYABLE TOTAL</span>
+      <strong>-$25.99</strong>
+    </div>
+    <div class="visual-annotation annotation-coupons">
+      <span>APPLIED</span>
+      <strong>SAVE20 ×6</strong>
+    </div>
+    <figcaption>{{ live.current_hero.caption if live.current_hero else "Live checkout evidence" }}</figcaption>
+  </figure>
+</section>
+
+<section class="signal-strip" aria-label="Recorded results">
+  <div class="shell signal-grid">
+    <div class="signal">
+      <span class="signal-value">{{ reliability.run_count }}/{{ reliability.run_count }}</span>
+      <span class="signal-label">mock benchmark runs succeeded</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">{{ live.current_outcome.wall_clock_s|seconds }}</span>
+      <span class="signal-label">live single-sandbox agent clock</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">{{ matrix.met }}/{{ matrix.total }}</span>
+      <span class="signal-label">generated-test expectations met</span>
+    </div>
+    <div class="signal">
+      <span class="signal-value">503 → fresh</span>
+      <span class="signal-label">recovery retry verified live</span>
+    </div>
+  </div>
+</section>
+
+<section class="section shell" id="defect">
+  <div class="section-head">
+    <p class="section-index">01 / The defect</p>
+    <h2>One coupon. Six applications.<br><span class="muted">A negative payable total.</span></h2>
+  </div>
+  <div class="defect-layout">
+    <div class="defect-number">
+      <span class="micro-label">Recorded total</span>
+      <strong>-$25.99</strong>
+      <p>
+        The checkout accepts <code>SAVE20</code> repeatedly. Each application subtracts
+        20% of the original subtotal. The sixth application pushes the payable total
+        below zero.
+      </p>
+      <div class="defect-tags">
+        <span>confirmed reproducible defect</span>
+        <span>severity high</span>
+        <span>6 applications</span>
+      </div>
+    </div>
+    <div class="ledger" aria-label="Coupon total sequence">
+      <div class="ledger-head"><span>Application</span><span>Total after</span></div>
+      {% for total in demo.coupon_totals %}
+      <div class="ledger-row">
+        <span class="ledger-index">{{ "%02d"|format(loop.index) }}</span>
+        <strong class="{% if total.value.startswith('-') %}negative{% endif %}">{{ total.value|money }}</strong>
+      </div>
+      {% endfor %}
+      <div class="ledger-foot">Six applications after the controlled 503 reset the fixture.</div>
+    </div>
+  </div>
+  <p class="source-note">
+    Source: <a href="/reports/evidence/actions.jsonl">recorded action log</a> and
+    <a href="/reports/workflow.json">workflow report</a>. The agent reads the total from
+    the page and records it; the claim is not inferred from a screenshot alone.
+  </p>
+</section>
+
+<section class="section shell" id="how">
+  <div class="section-head">
+    <p class="section-index">02 / The method</p>
+    <h2>Reproduce. Prove. Prevent.</h2>
+  </div>
+  <div class="method-grid">
+    <article class="method-card">
+      <span class="method-number">01</span>
+      <h3>Reproduce</h3>
+      <p>
+        Creates a logical sandbox, deploys the ShopDemo fixture, and drives Chromium
+        through the checkout. A controlled HTTP 503 at step 7 forces the recovery path
+        instead of hiding it.
+      </p>
+      <ul>
+        <li>Structured browser actions, never page-supplied code</li>
+        <li>Fresh-sandbox recovery on a mid-task failure</li>
+        <li>Deterministic fixture and scripted planner</li>
+      </ul>
+    </article>
+    <article class="method-card">
+      <span class="method-number">02</span>
+      <h3>Prove</h3>
+      <p>
+        Captures the action log, screenshots, command audit, lifecycle trace, hashes,
+        and git provenance. The defect is classified before any claim is made.
+      </p>
+      <ul>
+        <li>50 structured actions in the recorded mock run</li>
+        <li>28 lifecycle events, including the 503 and retry</li>
+        <li>Every artifact linked and verifiable</li>
+      </ul>
+    </article>
+    <article class="method-card">
+      <span class="method-number">03</span>
+      <h3>Prevent</h3>
+      <p>
+        Generates a reproduction spec and a regression spec, then runs a four-case
+        matrix. The reproduction must fail on the fixed build; the regression must fail
+        on the broken build.
+      </p>
+      <ul>
+        <li>{{ matrix.met }}/{{ matrix.total }} expectations met</li>
+        <li>Broken and fixed modes both exercised</li>
+        <li>Cleanup verified after success and failure</li>
+      </ul>
+    </article>
+  </div>
+
+  <aside class="containment-callout">
+    <div class="callout-mark" aria-hidden="true">!</div>
+    <div>
+      <p class="micro-label">Containment, not trust</p>
+      <p>
+        A customer review contains an embedded instruction. FlowScout records the
+        untrusted content, executes nothing from it, and blocks the extracted shell
+        command at the control-plane allowlist.
+      </p>
+    </div>
+    <a href="/reports/evidence/containment.log">Open the containment log <span aria-hidden="true">→</span></a>
+  </aside>
+</section>
+
+<section class="section shell" id="evidence">
+  <div class="section-head">
+    <p class="section-index">03 / The evidence</p>
+    <h2>Numbers with a source.</h2>
+  </div>
+  <div class="metric-grid">
+    <div class="metric-card">
+      <span class="metric-value">{{ reliability.run_count }}/{{ reliability.run_count }}</span>
+      <span class="metric-label">Mock benchmark</span>
+      <p>{{ reliability.success_rate_pct }}% success across deterministic mock runs. Real host Chromium; no Celesto charge.</p>
+    </div>
+    <div class="metric-card">
+      <span class="metric-value">{{ demo.run.wall_clock_s|seconds }}</span>
+      <span class="metric-label">Recorded mock run</span>
+      <p>Agent clock for the ten-step workflow, including the 503 recovery and test generation.</p>
+    </div>
+    <div class="metric-card">
+      <span class="metric-value">{{ live.current_outcome.wall_clock_s|seconds }}</span>
+      <span class="metric-label">Live single sandbox</span>
+      <p>One Celesto Micro workflow. Not a 20-run benchmark; the in-guest browser executed 40 actions.</p>
+    </div>
+    <div class="metric-card">
+      <span class="metric-value">{{ matrix.met }}/{{ matrix.total }}</span>
+      <span class="metric-label">Test matrix</span>
+      <p>Reproduction and regression specs checked against both broken and fixed builds.</p>
+    </div>
+    <div class="metric-card">
+      <span class="metric-value">{{ live.current_sandbox.boot_to_ready_s|seconds }}</span>
+      <span class="metric-label">Live boot to ready</span>
+      <p>Celesto Micro sandbox readiness before the browser workflow started.</p>
+    </div>
+    <div class="metric-card">
+      <span class="metric-value">2/2</span>
+      <span class="metric-label">Live cleanup</span>
+      <p>Failed and replacement sandboxes both deleted with Celesto Cloud confirmation.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section shell" id="boundary">
+  <div class="section-head">
+    <p class="section-index">04 / The truth boundary</p>
+    <h2>What is mock.<br>What is live.<br><span class="muted">What is not claimed.</span></h2>
+  </div>
+  <div class="boundary-grid">
+    <article class="boundary-card">
+      <span class="boundary-tag tag-mock">MOCK</span>
+      <h3>20-run benchmark</h3>
+      <p>
+        The 20/20 result uses a mock sandbox adapter and a real host Playwright browser.
+        Browser actions, target behavior, tests, and cleanup are real. Celesto boot
+        latency and cloud cost are not measured.
+      </p>
+      <a href="/reports/reliability.json">reliability.json <span aria-hidden="true">→</span></a>
+    </article>
+    <article class="boundary-card">
+      <span class="boundary-tag tag-live">RECORDED LIVE</span>
+      <h3>Single Celesto sandbox</h3>
+      <p>
+        One Celesto Micro run and one 503 recovery demonstration. The platform CDP
+        gateway returned HTTP 501, so the in-guest Playwright browser executed the
+        workflow. This is not a 20-run live benchmark.
+      </p>
+      <a href="/live">live evidence <span aria-hidden="true">→</span></a>
+    </article>
+    <article class="boundary-card">
+      <span class="boundary-tag tag-fresh">FRESH LIVE</span>
+      <h3>Not public by design</h3>
+      <p>
+        This deployment never starts a Celesto sandbox and holds no Celesto API key.
+        A fresh live run remains an admin-only, opt-in runner in the repository.
+      </p>
+      <a href="{{ github_url }}/blob/main/scripts/run_live_single.py">run_live_single.py <span aria-hidden="true">→</span></a>
+    </article>
+  </div>
+</section>
+
+<section class="section shell verify-section" id="verify">
+  <div class="verify-copy">
+    <p class="section-index">05 / Verify it yourself</p>
+    <h2>Don't trust the page.<br>Run the verifier.</h2>
+    <p>
+      The repository ships an independent verifier for reports, hashes, traces, and
+      live-evidence state. Every claim on this site maps to a committed file.
+    </p>
+    <div class="command-block">
+      <span class="command-prompt" aria-hidden="true">$</span>
+      <code>python scripts/verify_submission.py</code>
+      <span class="command-result">FlowScout verification: OK</span>
+    </div>
+    <div class="verify-actions">
+      <a class="button button-primary" href="{{ github_url }}" rel="noreferrer">Open the repository <span aria-hidden="true">↗</span></a>
+      <a class="button button-ghost" href="/reports/live-evidence/index.json">Read the live index</a>
+    </div>
+  </div>
+  <div class="verify-links">
+    <p class="micro-label">Committed evidence</p>
+    <a href="/reports/live-evidence/live-visible-guest-2026-11-07.json"><span>Current live record</span><span aria-hidden="true">↗</span></a>
+    <a href="/reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json"><span>503 recovery record</span><span aria-hidden="true">↗</span></a>
+    <a href="/reports/evidence/test-matrix.json"><span>Four-case test matrix</span><span aria-hidden="true">↗</span></a>
+    <a href="/reports/workflow.json"><span>Recorded workflow</span><span aria-hidden="true">↗</span></a>
+    <a href="{{ github_url }}/actions"><span>CI runs</span><span aria-hidden="true">↗</span></a>
+    <a href="{{ github_url }}/blob/main/README.md"><span>README and reproduction steps</span><span aria-hidden="true">↗</span></a>
+  </div>
+</section>
+
+<section class="final-cta shell">
+  <div>
+    <p class="section-index">Start here</p>
+    <h2>Watch the ten steps.<br>Then inspect the proof.</h2>
+  </div>
+  <div class="final-actions">
+    <a class="button button-primary" href="/demo">Replay the recorded run <span aria-hidden="true">→</span></a>
+    <a class="button button-ghost" href="/live">See the live 503 recovery</a>
+  </div>
+</section>
+{% endblock %}
