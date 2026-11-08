@@ -22,6 +22,7 @@ application of the same coupon.
 from __future__ import annotations
 
 import html
+import os
 import secrets
 import threading
 from collections import OrderedDict
@@ -457,13 +458,17 @@ def target_health() -> dict[str, str]:
 
 
 def _serve() -> None:
-    """Run the fixture standalone inside a sandbox guest (python3 <this> --serve)."""
+    """Run the fixture standalone inside a sandbox guest (python3 <this> --serve).
+
+    When deployed as a public web service (e.g. on Render), bind to 0.0.0.0
+    and honour the ``PORT`` environment variable supplied by the platform.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(description="ShopDemo guest server")
     parser.add_argument("--serve", action="store_true", help="required; serves the fixture")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8090)
+    parser.add_argument("--host", default=os.getenv("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8090")))
     args = parser.parse_args()
     if not args.serve:
         parser.error("--serve is required")
@@ -474,6 +479,16 @@ def _serve() -> None:
     app = FastAPI(title="ShopDemo (guest fixture)")
     app.include_router(router)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+
+
+# ---------------------------------------------------------------------------
+# Standalone ASGI app for uvicorn / Render deployment.
+# Usage:  uvicorn app.target_saas_app:shopdemo_app --host 0.0.0.0 --port $PORT
+# ---------------------------------------------------------------------------
+from fastapi import FastAPI as _FastAPI
+
+shopdemo_app = _FastAPI(title="ShopDemo", description="Deterministic checkout fixture with a coupon-stacking defect.")
+shopdemo_app.include_router(router)
 
 
 if __name__ == "__main__":

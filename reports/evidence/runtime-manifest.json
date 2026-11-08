@@ -24,7 +24,7 @@
     "app/guest_browser_worker.py": "e1eed2d459eb29e53a6dc2846a484a5e85b7f1431aca3d1f0de4682ff3c3fa06",
     "app/guest_healthcheck.py": "6d67b4031ffb28b3cf7f9c3e79e857e0e66aae76047cf8e335d721b611cdcf83",
     "app/main.py": "d79048d9341a73a4f6e5e62ee57f4da6407116644ca7e503abf93eca647dfff8",
-    "app/target_saas_app.py": "b54351839e533618d1af19ebc9a80dfb39c090cfda1c1e89880ef715320aa15e",
+    "app/target_saas_app.py": "469c0de5018f6354d42480fc12c70862f3402660507a472047267dea47ad769a",
     "playwright.config.ts": "33a2a1067c209d5f356d8211cd56ad2aaf9b24dfe19d109dbf0f38372ada1a06",
     "scripts/run_live_demo.py": "964ed0ad1e9db593c338e5690e0ed1ef7e64f0ffb7d4b17549b21ad07649a209",
     "scripts/run_live_single.py": "257c289a8d38c6009475e681d7444e38dfb84d2a94b35de6efa98844b48cfb93",
