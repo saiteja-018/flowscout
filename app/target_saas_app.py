@@ -478,6 +478,11 @@ def _serve() -> None:
 
     app = FastAPI(title="ShopDemo (guest fixture)")
     app.include_router(router)
+
+    @app.get("/", include_in_schema=False)
+    def _root_redirect() -> RedirectResponse:
+        return RedirectResponse(url="/shop/", status_code=307)
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 
@@ -489,6 +494,11 @@ from fastapi import FastAPI as _FastAPI
 
 shopdemo_app = _FastAPI(title="ShopDemo", description="Deterministic checkout fixture with a coupon-stacking defect.")
 shopdemo_app.include_router(router)
+
+
+@shopdemo_app.get("/", include_in_schema=False)
+def _shopdemo_root() -> RedirectResponse:
+    return RedirectResponse(url="/shop/", status_code=307)
 
 
 if __name__ == "__main__":
