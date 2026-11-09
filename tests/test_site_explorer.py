@@ -270,3 +270,122 @@ def test_demo_probe_skips_non_demo_and_fixed_behavior(tmp_path: Path) -> None:
     )
     assert fixed._demo_coupon_probe() is None
     assert fixed.issues == []
+
+
+class _FakeHealthResponse:
+    def __init__(self, payload: dict, status_code: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status_code
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def test_demo_probe_detects_verified_public_shopdemo(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_get(url: str, **kwargs):
+        calls.append(url)
+        return _FakeHealthResponse({"status": "ok", "target": "shopdemo"})
+
+    monkeypatch.setattr(socket, "getaddrinfo", _resolver("93.184.216.34"))
+    monkeypatch.setattr("app.site_explorer.httpx.get", fake_get)
+    driver = FakeDriver(
+        outputs={
+            "[data-testid='applied-coupons']": "Applied: SAVE20 x2",
+            "[data-testid='cart-total']": "$77.98",
+        }
+    )
+    explorer = PublicSiteExplorer(
+        driver=driver,
+        target_url="https://flowscout-shopdemo.onrender.com/shop/",
+        evidence_dir=tmp_path,
+        allow_private=False,
+    )
+    test = explorer._demo_coupon_probe()
+    assert test is not None
+    assert test["source"] == "demo-probe"
+    assert test["target_url"] == "https://flowscout-shopdemo.onrender.com/shop/"
+    assert calls == ["https://flowscout-shopdemo.onrender.com/shop/api/health"]
+    assert explorer.issues[0]["category"] == "coupon_stacking"
+
+
+def test_demo_probe_does_not_verify_arbitrary_public_site(
+    tmp_path: Path, monkeypatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_get(url: str, **kwargs):
+        calls.append(url)
+        return _FakeHealthResponse({"status": "ok", "target": "shopdemo"})
+
+    monkeypatch.setattr("app.site_explorer.httpx.get", fake_get)
+    explorer = PublicSiteExplorer(
+        driver=FakeDriver(),
+        target_url="https://example.com/shop/",
+        evidence_dir=tmp_path,
+        allow_private=False,
+    )
+    assert explorer._demo_coupon_probe() is None
+    assert explorer.issues == []
+    assert calls == []
+
+
+def test_demo_probe_requires_health_confirmation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.site_explorer.httpx.get",
+        lambda *args, **kwargs: _FakeHealthResponse({"status": "ok", "target": "other"}),
+    )
+    explorer = PublicSiteExplorer(
+        driver=FakeDriver(),
+        target_url="https://flowscout-shopdemo.onrender.com/shop/",
+        evidence_dir=tmp_path,
+        allow_private=False,
+    )
+    assert explorer._demo_coupon_probe() is None
+    assert explorer.issues == []
+
+
+def test_verified_public_shopdemo_allows_checkout_navigation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "app.site_explorer.httpx.get",
+        lambda *args, **kwargs: _FakeHealthResponse({"status": "ok", "target": "shopdemo"}),
+    )
+    explorer = PublicSiteExplorer(
+        driver=FakeDriver(),
+        target_url="https://flowscout-shopdemo.onrender.com/shop/",
+        evidence_dir=tmp_path,
+        allow_private=False,
+    )
+    assert (
+        explorer._safe_navigation(
+            "https://flowscout-shopdemo.onrender.com/shop/checkout",
+            "Proceed to checkout",
+        )
+        is True
+    )
+    assert (
+        explorer._safe_navigation(
+            "https://example.com/shop/checkout",
+            "Proceed to checkout",
+        )
+        is False
+    )
+
+
+def test_loopback_shopdemo_allows_checkout_navigation(tmp_path: Path) -> None:
+    explorer = PublicSiteExplorer(
+        driver=FakeDriver(),
+        target_url="http://127.0.0.1:8099/shop/",
+        evidence_dir=tmp_path,
+        allow_private=True,
+    )
+    assert (
+        explorer._safe_navigation(
+            "http://127.0.0.1:8099/shop/checkout",
+            "Proceed to checkout",
+        )
+        is True
+    )

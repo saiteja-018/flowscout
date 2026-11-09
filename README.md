@@ -737,20 +737,25 @@ Chromium through the verified in-guest Playwright path, and attempts deletion in
 failed cleanup is surfaced, not hidden. IDs in `CELESTO_KEEP_COMPUTER_IDS` are
 never touched by cleanup.
 
-**Bundled demo probe.** When, and only when, mock/local mode targets the bundled
-loopback `/shop/` fixture, the explorer runs a scoped duplicate-coupon probe. It
+**ShopDemo probe.** When a run targets a verified ShopDemo fixture — the local
+loopback `/shop/` fixture or a public deployment that confirms its identity at
+`/shop/api/health` — the explorer runs a scoped duplicate-coupon probe. It
 applies `SAVE20` twice through the same validated action schema, detects the
 documented coupon-stacking defect, captures a screenshot, and generates a real
 regression test that expects the second application to be rejected. The probe
-does not run against public sites and does not give the planner new powers.
+does not run against arbitrary public sites and does not give the planner new
+powers. `flowscout-shopdemo.onrender.com` is on the built-in allowlist;
+`FLOWSCOUT_SHOPDEMO_HOSTS` can add another deployment, but the health marker
+must still confirm it.
 
 **Safety controls.** URL validation rejects credentials, non-HTTP schemes,
 private/metadata/link-local addresses (metadata stays blocked even in local
 mode), and restricts public live targets to ports 80/443. Selectors are limited
 to stable `data-testid`, simple `id`, or short text forms; session-only
 `data-flowscout-ref` selectors are rejected for saved tests. Destructive,
-payment, and account actions are denylisted. AI output can only choose from
-validated actions and is never executed as code. Live credentials are read from
+payment, and account actions are denylisted; the only exception is the verified
+ShopDemo checkout, which has no real payment path. AI output can only choose
+from validated actions and is never executed as code. Live credentials are read from
 the environment and are never rendered into a page or API response. Mock mode is
 a local-development surface: it intentionally permits loopback/private targets
 for the bundled demo, so do not expose it on an untrusted public host. The

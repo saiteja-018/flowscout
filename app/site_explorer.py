@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shlex
 import time
@@ -27,6 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 from urllib.parse import urlsplit, urlunsplit
+
+import httpx
 
 from app.evidence_io import atomic_write_bytes, atomic_write_json
 from app.guest_browser_worker import attach_diagnostics, execute_action
@@ -41,7 +44,27 @@ MAX_SCREENSHOTS = 8
 MAX_ISSUES = 60
 MAX_TEST_ACTIONS = 24
 
+SHOPDEMO_PUBLIC_HOSTS = {"flowscout-shopdemo.onrender.com"}
+SHOPDEMO_HEALTH_PATH = "/shop/api/health"
+SHOPDEMO_TARGET_MARKER = "shopdemo"
+
 ProgressCallback = Callable[[str, int, str, dict[str, Any] | None], None]
+
+
+def _shopdemo_hosts() -> set[str]:
+    """Public hosts that may prove they are the ShopDemo fixture.
+
+    The default covers the deployed demo. A deployment can add its own
+    ShopDemo host with ``FLOWSCOUT_SHOPDEMO_HOSTS``; the health check below
+    still has to confirm the fixture before checkout/coupon probing is enabled.
+    """
+    hosts = set(SHOPDEMO_PUBLIC_HOSTS)
+    raw = os.getenv("FLOWSCOUT_SHOPDEMO_HOSTS", "").strip()
+    if raw:
+        hosts.update(
+            item.strip().lower().rstrip(".") for item in raw.split(",") if item.strip()
+        )
+    return hosts
 
 
 def utcnow() -> str:
@@ -681,6 +704,7 @@ class PublicSiteExplorer:
         self._seen_candidates: set[tuple[str, ...]] = set()
         self._visited: set[str] = set()
         self._page_keys: set[str] = set()
+        self._shopdemo_verified: bool | None = None
         self.planner_mode = "scripted_heuristic"
         self._planner_failed = False
 
@@ -870,20 +894,20 @@ class PublicSiteExplorer:
     # --------------------------------------------------------------- candidates
 
     def _is_demo_checkout(self, href: str) -> bool:
-        """Allow the bundled ShopDemo checkout link in explicit local mode.
+        """Allow the ShopDemo checkout link on a verified ShopDemo target.
 
         The fixture has no real payments and its checkout page is the only
         place where the deterministic coupon behavior can be exercised. This
-        exception is scoped to a loopback/local target under ``/shop``; it is
-        never available for a public live run.
+        exception is scoped to the bundled loopback fixture or a public host
+        that proves it is ShopDemo through ``/shop/api/health``; it is never
+        available for arbitrary public sites.
         """
-        if not self.allow_private:
+        if not self._is_shopdemo_target():
             return False
         target = urlsplit(self.target_url)
         candidate = urlsplit(href)
-        if (target.hostname or "") not in {"127.0.0.1", "localhost", "::1"}:
-            return False
-        if not (target.path or "/").startswith("/shop"):
+        target_path = target.path or "/"
+        if target_path != "/shop" and not target_path.startswith("/shop/"):
             return False
         return is_same_origin(href, origin_of(self.target_url)) and (
             candidate.path or "/"
@@ -1210,24 +1234,65 @@ class PublicSiteExplorer:
 
     # --------------------------------------------------------------- demo probe
 
-    def _is_bundled_demo(self) -> bool:
-        if not self.allow_private:
-            return False
+    def _is_shopdemo_target(self) -> bool:
+        """Return True only for the bundled ShopDemo fixture, local or deployed.
+
+        Loopback fixtures are trusted directly in explicit mock mode. A public
+        target must be on the ShopDemo host allowlist *and* prove its identity
+        through the fixture health endpoint. This keeps the checkout/coupon
+        probe scoped to ShopDemo instead of enabling payment-path navigation on
+        arbitrary public sites.
+        """
+        if self._shopdemo_verified is not None:
+            return self._shopdemo_verified
+        self._shopdemo_verified = False
         parsed = urlsplit(self.target_url)
-        return (parsed.hostname or "") in {"127.0.0.1", "localhost", "::1"} and (
-            parsed.path or "/"
-        ).startswith("/shop")
+        host = (parsed.hostname or "").lower().rstrip(".")
+        path = parsed.path or "/"
+        if path != "/shop" and not path.startswith("/shop/"):
+            return False
+        if self.allow_private and host in {"127.0.0.1", "localhost", "::1"}:
+            self._shopdemo_verified = True
+            return True
+        if parsed.scheme != "https" or host not in _shopdemo_hosts():
+            return False
+        health_url = origin_of(self.target_url).rstrip("/") + SHOPDEMO_HEALTH_PATH
+        try:
+            response = httpx.get(
+                health_url,
+                timeout=8.0,
+                follow_redirects=False,
+                headers={"User-Agent": "FlowScoutQA/1.0"},
+            )
+            payload = response.json() if response.status_code == 200 else {}
+        except Exception as exc:
+            self._log(
+                f"ShopDemo verification failed for {health_url}: {type(exc).__name__}: {exc}",
+                "warn",
+            )
+            return False
+        if (
+            isinstance(payload, dict)
+            and payload.get("status") == "ok"
+            and payload.get("target") == SHOPDEMO_TARGET_MARKER
+        ):
+            self._shopdemo_verified = True
+            self._log(f"Verified ShopDemo target via {SHOPDEMO_HEALTH_PATH}", "info")
+        else:
+            self._log("ShopDemo health endpoint did not confirm the fixture", "warn")
+        return self._shopdemo_verified
 
     def _demo_coupon_probe(self) -> dict[str, Any] | None:
-        """Exercise the bundled ShopDemo's documented duplicate-coupon defect.
+        """Exercise the ShopDemo fixture's documented duplicate-coupon defect.
 
-        Scoped to the local demo fixture only. Every action still goes through
-        the same validated action schema and browser driver as normal
-        exploration. The generated regression test encodes the intended
-        one-use coupon policy, so it fails while the fixture is in broken mode
-        and passes after the fixture is switched to fixed mode.
+        Scoped to the bundled ShopDemo fixture, local or a verified public
+        deployment. Every action still goes through the same validated action
+        schema and browser driver as normal exploration. The generated
+        regression test encodes the intended one-use coupon policy, so it fails
+        while the fixture is in broken mode and passes after the fixture is
+        switched to fixed mode.
         """
-        if not self._is_bundled_demo():
+        if not self._is_shopdemo_target():
             return None
         checkout = origin_of(self.target_url).rstrip("/") + "/shop/checkout"
         step = self.max_steps + 1
@@ -1279,8 +1344,8 @@ class PublicSiteExplorer:
                 description="Capture demo coupon evidence",
             ),
         ]
-        self._log("Running bundled ShopDemo duplicate-coupon probe", "info")
-        self._emit("probing_demo", 86, "Verifying the bundled ShopDemo coupon policy")
+        self._log("Running ShopDemo duplicate-coupon probe", "info")
+        self._emit("probing_demo", 86, "Verifying the ShopDemo coupon policy")
         data = self._execute(actions, step=step)
         self._record_batch(actions, data, step=step, role="probe")
         results = data.get("results") or []
@@ -1412,7 +1477,7 @@ class PublicSiteExplorer:
             "created_at": utcnow(),
         }
         try:
-            return validate_test_case(test, allow_private=True)
+            return validate_test_case(test, allow_private=self.allow_private)
         except (ValueError, InvalidAction) as exc:
             self._log(f"Demo regression test rejected by schema: {exc}", "warn")
             return None
