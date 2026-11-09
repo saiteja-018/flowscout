@@ -32,6 +32,7 @@ guest Chromium applies `SAVE20` six times and the checkout total becomes
 | Live single-sandbox run: SAVE20 stacking reproduced, cleanup confirmed, 102.39 s agent clock | [`reports/live-evidence/live-visible-guest-2026-11-07.json`](reports/live-evidence/live-visible-guest-2026-11-07.json) |
 | Live recovery: step-7 HTTP 503 → fresh sandbox → retry reproduced the defect; both sandboxes deleted | [`reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json`](reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json) |
 | Live console exploration: TodoMVC, 8 actions, 2 saved tests, 0 issues, cleanup confirmed in 29.68 s | [`reports/evidence/console-live-todomvc-2026-11-08.json`](reports/evidence/console-live-todomvc-2026-11-08.json) |
+| Live console exploration: deployed ShopDemo, `SAVE20 x2` at `$77.98`, 4 saved tests, cleanup confirmed in 43.89 s | [`reports/evidence/console-live-shopdemo-2026-11-09.json`](reports/evidence/console-live-shopdemo-2026-11-09.json) |
 | Generated tests: 4/4 expectations met (reproduction + regression, broken + fixed) | [`reports/evidence/test-matrix.json`](reports/evidence/test-matrix.json) |
 | Controlled step-7 HTTP 503: fresh sandbox, redeploy, retry, complete | [`reports/failure_trace.jsonl`](reports/failure_trace.jsonl) |
 | Prompt-injection command blocked before dispatch, host canary unchanged | [`reports/containment.json`](reports/containment.json) |
@@ -556,6 +557,26 @@ The committed record is
 the second screenshot is
 [`reports/evidence/console-live-todomvc-step-02.jpg`](reports/evidence/console-live-todomvc-step-02.jpg).
 
+The deployed ShopDemo was then exercised from the same deployed console in live
+mode. The explorer verified `/shop/api/health`, followed **Proceed to checkout**,
+and applied `SAVE20` twice. The guest browser recorded `Applied: SAVE20 x2` and
+a `$77.98` total, saved four tests (deduplicated against the deployed mock run),
+and confirmed sandbox deletion in 43.89 s. The sandbox booted in 10.51 s.
+
+Before the fix, the deployed console only loaded the ShopDemo homepage because
+checkout was denylisted and the coupon probe was hardcoded to loopback. The
+verified-ShopDemo check is what lets live mode reach the checkout and run the
+same probe as mock mode without opening checkout paths on arbitrary public sites.
+
+![Live console exploration of the deployed ShopDemo](reports/evidence/console-live-shopdemo-2026-11-09-step-01.jpg)
+
+The live record is
+[`reports/evidence/console-live-shopdemo-2026-11-09.json`](reports/evidence/console-live-shopdemo-2026-11-09.json).
+The deployed mock check that confirmed the same behavior after the fix is
+[`reports/evidence/console-mock-shopdemo-2026-11-09.json`](reports/evidence/console-mock-shopdemo-2026-11-09.json);
+its probe screenshot is
+[`reports/evidence/console-mock-shopdemo-2026-11-09-step-01.jpg`](reports/evidence/console-mock-shopdemo-2026-11-09-step-01.jpg).
+
 ### Reproduce the live run
 
 [`scripts/run_live_single.py`](scripts/run_live_single.py) is the reproducible
@@ -771,16 +792,18 @@ runs show 3 PASS / 1 FAIL with a failure screenshot and confirmed cleanup. A
 live console exploration has also been validated against
 `https://demo.playwright.dev/todomvc/` with a 4-step budget and the AI planner
 disabled: 8 actions, 2 screenshots, 2 saved tests, 0 issues, and cleanup
-confirmed in 29.68 s. The committed record and screenshots are linked under
+confirmed in 29.68 s. The deployed ShopDemo was validated from the deployed
+console in live mode: the guest browser applied `SAVE20` twice, recorded
+`SAVE20 x2` at `$77.98`, saved four tests, and confirmed cleanup in 43.89 s. The
+committed records and screenshots are linked under
 [Live console validation](#live-console-validation). Arbitrary public-website
-compatibility is otherwise
-unverified; the initial scope is public, no-login pages. The demo fixture starts
-broken, so the default regression baseline already fails the coupon test; the
-PASS→FAIL `newly_failing` transition is covered by unit tests rather than this
-demo. The PostgreSQL console backend was exercised in the Compose stack,
-including persistence across an API restart; host-level validation used the
-local file-backed store. The public Render console uses the local file store and
-is ephemeral.
+compatibility is otherwise unverified; the initial scope is public, no-login
+pages. The demo fixture starts broken, so the default regression baseline
+already fails the coupon test; the PASS→FAIL `newly_failing` transition is
+covered by unit tests rather than this demo. The PostgreSQL console backend was
+exercised in the Compose stack, including persistence across an API restart;
+host-level validation used the local file-backed store. The public Render
+console uses the local file store and is ephemeral.
 
 Memory-backed local demo:
 
@@ -881,7 +904,10 @@ execution surface either.
 To exercise the deployed ShopDemo from the deployed console, submit the absolute
 `https://flowscout-shopdemo.onrender.com/shop/` URL. The console's relative
 "Use ShopDemo" link only resolves when the console and the fixture share a host,
-as they do in Docker Compose or a local process.
+as they do in Docker Compose or a local process. The explorer verifies
+`/shop/api/health` before enabling the checkout link and coupon probe, so the
+deployed target works in both mock and live mode while arbitrary public sites
+keep the normal denylist.
 
 Deploy by connecting the repository in Render and selecting the existing
 `render.yaml`, or run the image locally:

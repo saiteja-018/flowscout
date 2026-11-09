@@ -1,0 +1,482 @@
+{
+  "run": {
+    "run_id": "run_db85dca1d567",
+    "project_id": "prj_10ebf484c5d1",
+    "kind": "exploration",
+    "mode": "live",
+    "target_url": "https://flowscout-shopdemo.onrender.com/shop/",
+    "status": "succeeded",
+    "phase": "completed",
+    "progress": 100,
+    "sandbox_name": "sbx-nvyqufspzw8f",
+    "provider_id": "cmp_961f8a733ff9",
+    "cleanup_ok": true,
+    "cleanup_message": "Celesto Cloud delete confirmed",
+    "error": "",
+    "summary": {
+      "pages_visited": 2,
+      "actions": 23,
+      "issues": 1,
+      "tests_generated": 4,
+      "max_steps": 8,
+      "duration_s": 25.75,
+      "project_name": "Deployed ShopDemo post-fix mock check",
+      "planner_mode": "scripted_heuristic",
+      "browser_runtime": "celesto_guest_playwright",
+      "tests_reused": 4,
+      "sandbox": {
+        "name": "sbx-nvyqufspzw8f",
+        "provider_id": "cmp_961f8a733ff9",
+        "boot_to_ready_s": 10.511
+      },
+      "use_ai": false
+    },
+    "issues": [
+      {
+        "issue_id": "iss_76dcedcab274",
+        "category": "coupon_stacking",
+        "title": "One-use coupon SAVE20 can be applied repeatedly",
+        "description": "Applying SAVE20 twice left the checkout showing 'Applied: SAVE20 x2' with a total of '$77.98'. The intended policy rejects a second use of the same coupon.",
+        "severity": "high",
+        "url": "https://flowscout-shopdemo.onrender.com/shop/checkout",
+        "step": 9,
+        "evidence": [
+          "step-00-1794246195898-49aa61.jpg"
+        ],
+        "detected_at": "2026-11-09T17:43:16.682413+00:00"
+      }
+    ],
+    "actions": [
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "navigate",
+        "selector": "",
+        "value": "https://flowscout-shopdemo.onrender.com/shop/",
+        "attribute": "",
+        "description": "Open the target website",
+        "success": true,
+        "output": "https://flowscout-shopdemo.onrender.com/shop/",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 450.8,
+        "ts": "2026-11-09T17:43:06.742299+00:00"
+      },
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "wait",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Let the page settle",
+        "success": true,
+        "output": "waited 1200ms",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 1203.5,
+        "ts": "2026-11-09T17:43:06.742321+00:00"
+      },
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "snapshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Read the page structure",
+        "success": true,
+        "output": "page snapshot",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 10.9,
+        "ts": "2026-11-09T17:43:06.742329+00:00"
+      },
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "screenshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Capture evidence: Homepage",
+        "success": true,
+        "output": "step-00-1794246185787.jpg",
+        "error": "",
+        "screenshot": "step-00-1794246185787-c93893.jpg",
+        "wall_ms": 107.0,
+        "ts": "2026-11-09T17:43:06.742338+00:00"
+      },
+      {
+        "step": 2,
+        "role": "explore",
+        "action_type": "navigate",
+        "selector": "",
+        "value": "https://flowscout-shopdemo.onrender.com/shop/checkout",
+        "attribute": "",
+        "description": "Open Proceed to checkout",
+        "success": true,
+        "output": "https://flowscout-shopdemo.onrender.com/shop/checkout",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 193.7,
+        "ts": "2026-11-09T17:43:09.572422+00:00"
+      },
+      {
+        "step": 2,
+        "role": "explore",
+        "action_type": "wait",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Let the page settle",
+        "success": true,
+        "output": "waited 900ms",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 900.6,
+        "ts": "2026-11-09T17:43:09.572443+00:00"
+      },
+      {
+        "step": 2,
+        "role": "explore",
+        "action_type": "snapshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Read the page structure",
+        "success": true,
+        "output": "page snapshot",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 12.9,
+        "ts": "2026-11-09T17:43:09.572450+00:00"
+      },
+      {
+        "step": 2,
+        "role": "explore",
+        "action_type": "screenshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Capture evidence: Open Proceed to checkout",
+        "success": true,
+        "output": "step-00-1794246188768.jpg",
+        "error": "",
+        "screenshot": "step-00-1794246188768-6bf7a4.jpg",
+        "wall_ms": 71.9,
+        "ts": "2026-11-09T17:43:09.572459+00:00"
+      },
+      {
+        "step": 3,
+        "role": "explore",
+        "action_type": "fill",
+        "selector": "[data-testid='coupon-input']",
+        "value": "FlowScout QA",
+        "attribute": "",
+        "description": "Fill Coupon code",
+        "success": true,
+        "output": "",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 53.1,
+        "ts": "2026-11-09T17:43:12.185302+00:00"
+      },
+      {
+        "step": 3,
+        "role": "explore",
+        "action_type": "wait",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Let the page settle",
+        "success": true,
+        "output": "waited 900ms",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 902.7,
+        "ts": "2026-11-09T17:43:12.185324+00:00"
+      },
+      {
+        "step": 3,
+        "role": "explore",
+        "action_type": "snapshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Read the page structure",
+        "success": true,
+        "output": "page snapshot",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 7.2,
+        "ts": "2026-11-09T17:43:12.185331+00:00"
+      },
+      {
+        "step": 3,
+        "role": "explore",
+        "action_type": "screenshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Capture evidence: Fill Coupon code",
+        "success": true,
+        "output": "step-00-1794246191321.jpg",
+        "error": "",
+        "screenshot": "step-00-1794246191321-654867.jpg",
+        "wall_ms": 59.6,
+        "ts": "2026-11-09T17:43:12.185339+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "navigate",
+        "selector": "",
+        "value": "https://flowscout-shopdemo.onrender.com/shop/checkout",
+        "attribute": "",
+        "description": "Open the demo checkout",
+        "success": true,
+        "output": "https://flowscout-shopdemo.onrender.com/shop/checkout",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 186.9,
+        "ts": "2026-11-09T17:43:16.682227+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "wait",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Let checkout settle",
+        "success": true,
+        "output": "waited 500ms",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 502.1,
+        "ts": "2026-11-09T17:43:16.682259+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "fill",
+        "selector": "[data-testid='coupon-input']",
+        "value": "SAVE20",
+        "attribute": "",
+        "description": "Enter SAVE20 once",
+        "success": true,
+        "output": "",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 43.2,
+        "ts": "2026-11-09T17:43:16.682267+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "click",
+        "selector": "[data-testid='apply-coupon-btn']",
+        "value": "",
+        "attribute": "",
+        "description": "Submit the first coupon",
+        "success": true,
+        "output": "",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 319.2,
+        "ts": "2026-11-09T17:43:16.682275+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "wait",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Wait for the coupon result",
+        "success": true,
+        "output": "waited 700ms",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 700.9,
+        "ts": "2026-11-09T17:43:16.682281+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "fill",
+        "selector": "[data-testid='coupon-input']",
+        "value": "SAVE20",
+        "attribute": "",
+        "description": "Enter SAVE20 a second time",
+        "success": true,
+        "output": "",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 55.0,
+        "ts": "2026-11-09T17:43:16.682285+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "click",
+        "selector": "[data-testid='apply-coupon-btn']",
+        "value": "",
+        "attribute": "",
+        "description": "Submit the duplicate coupon",
+        "success": true,
+        "output": "",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 306.4,
+        "ts": "2026-11-09T17:43:16.682290+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "wait",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Wait for the duplicate result",
+        "success": true,
+        "output": "waited 700ms",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 700.3,
+        "ts": "2026-11-09T17:43:16.682295+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "read_text",
+        "selector": "[data-testid='applied-coupons']",
+        "value": "",
+        "attribute": "",
+        "description": "Read the applied coupon count",
+        "success": true,
+        "output": "Applied: SAVE20 x2",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 53.0,
+        "ts": "2026-11-09T17:43:16.682301+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "read_text",
+        "selector": "[data-testid='cart-total']",
+        "value": "",
+        "attribute": "",
+        "description": "Read the cart total",
+        "success": true,
+        "output": "$77.98",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 24.7,
+        "ts": "2026-11-09T17:43:16.682319+00:00"
+      },
+      {
+        "step": 9,
+        "role": "probe",
+        "action_type": "screenshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Capture demo coupon evidence",
+        "success": true,
+        "output": "step-00-1794246195898.jpg",
+        "error": "",
+        "screenshot": "step-00-1794246195898-49aa61.jpg",
+        "wall_ms": 57.7,
+        "ts": "2026-11-09T17:43:16.682328+00:00"
+      }
+    ],
+    "logs": [
+      {
+        "ts": "2026-11-09T17:42:51.041927+00:00",
+        "level": "info",
+        "message": "Starting exploration of https://flowscout-shopdemo.onrender.com/shop/"
+      },
+      {
+        "ts": "2026-11-09T17:43:03.126383+00:00",
+        "level": "info",
+        "message": "Browser runtime: celesto_guest_playwright"
+      },
+      {
+        "ts": "2026-11-09T17:43:06.845583+00:00",
+        "level": "info",
+        "message": "Verified ShopDemo target via /shop/api/health"
+      },
+      {
+        "ts": "2026-11-09T17:43:06.845705+00:00",
+        "level": "info",
+        "message": "Heuristic chose Open Proceed to checkout"
+      },
+      {
+        "ts": "2026-11-09T17:43:09.575916+00:00",
+        "level": "info",
+        "message": "Heuristic chose Fill Coupon code"
+      },
+      {
+        "ts": "2026-11-09T17:43:12.189543+00:00",
+        "level": "info",
+        "message": "No safe unexplored candidates remain"
+      },
+      {
+        "ts": "2026-11-09T17:43:12.192913+00:00",
+        "level": "info",
+        "message": "Running ShopDemo duplicate-coupon probe"
+      },
+      {
+        "ts": "2026-11-09T17:43:16.682421+00:00",
+        "level": "warn",
+        "message": "Issue detected: One-use coupon SAVE20 can be applied repeatedly"
+      },
+      {
+        "ts": "2026-11-09T17:43:16.786704+00:00",
+        "level": "info",
+        "message": "Generated 4 validated regression test(s)"
+      }
+    ],
+    "screenshots": [
+      {
+        "name": "step-00-1794246185787-c93893.jpg",
+        "caption": "Step 1: Capture evidence: Homepage",
+        "step": 1,
+        "kind": "setup"
+      },
+      {
+        "name": "step-00-1794246188768-6bf7a4.jpg",
+        "caption": "Step 2: Capture evidence: Open Proceed to checkout",
+        "step": 2,
+        "kind": "explore"
+      },
+      {
+        "name": "step-00-1794246191321-654867.jpg",
+        "caption": "Step 3: Capture evidence: Fill Coupon code",
+        "step": 3,
+        "kind": "explore"
+      },
+      {
+        "name": "step-00-1794246195898-49aa61.jpg",
+        "caption": "Step 9: Capture demo coupon evidence",
+        "step": 9,
+        "kind": "probe"
+      }
+    ],
+    "generated_test_ids": [
+      "tc_c0801b09b676",
+      "tc_5d6532d2d23e",
+      "tc_918338a10283",
+      "tc_b9c84269f09e"
+    ],
+    "started_at": "2026-11-09T17:42:32.905394+00:00",
+    "finished_at": "2026-11-09T17:43:16.791658+00:00",
+    "duration_s": 43.89,
+    "created_at": "2026-11-09T17:42:32.899934+00:00",
+    "updated_at": "2026-11-09T17:43:21.006837+00:00"
+  },
+  "results": []
+}
