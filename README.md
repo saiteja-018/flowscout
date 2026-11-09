@@ -597,8 +597,9 @@ The free trial allows **two new sandboxes per hour**. A normal run uses one; the
 recovery demonstration uses two (failed + fresh replacement). A quota `429` is
 reported with the reset guidance instead of being hidden, and
 `--create-patience` controls how long the runner waits for a throttled create.
-The retained sandbox `cmp_3e12f5354e89` is protected by
-`CELESTO_KEEP_COMPUTER_IDS` and is never touched.
+The retained sandbox `cmp_3e12f5354e89` was protected by
+`CELESTO_KEEP_COMPUTER_IDS` during the recorded runs and was not touched. It was
+later deleted manually.
 
 #### Recorded recovery run
 
@@ -733,8 +734,8 @@ Celesto credits, and the free trial allows two new sandboxes per hour.
 **Sandbox lifecycle.** Every live run creates a fresh Celesto sandbox, launches
 Chromium through the verified in-guest Playwright path, and attempts deletion in
 `finally`. Deletion is confirmed through Celesto and recorded on the run; a
-failed cleanup is surfaced, not hidden. IDs in `CELESTO_KEEP_COMPUTER_IDS`
-(including `cmp_3e12f5354e89`) are never touched.
+failed cleanup is surfaced, not hidden. IDs in `CELESTO_KEEP_COMPUTER_IDS` are
+never touched by cleanup.
 
 **Bundled demo probe.** When, and only when, mock/local mode targets the bundled
 loopback `/shop/` fixture, the explorer runs a scoped duplicate-coupon probe. It
@@ -859,8 +860,8 @@ The deployed console currently reports:
 - The local file-backed console store. Run metadata and evidence live inside the
   container filesystem, which is ephemeral on Render's free plan, so a restart
   or redeploy can remove old runs.
-- `CELESTO_KEEP_COMPUTER_IDS` includes the protected sandbox
-  `cmp_3e12f5354e89`; cleanup never touches it.
+- `CELESTO_KEEP_COMPUTER_IDS` is configured with protected IDs; cleanup never
+  touches them.
 
 **Public-demo warning.** The console has no user authentication. Because the
 Render service has live Celesto credentials, anyone who can reach the run form
