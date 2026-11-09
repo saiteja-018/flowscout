@@ -43,7 +43,7 @@ verified browser path is the in-guest Playwright browser; CDP remains unverified
 
 ## Deployed demo
 
-The product runs on Render's free plan:
+The product is deployed on Render:
 
 | Surface | URL | What it is |
 |---|---|---|
