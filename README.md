@@ -31,6 +31,7 @@ guest Chromium applies `SAVE20` six times and the checkout total becomes
 | Mock benchmark: 20/20 workflows, 100% success, median 2.730 s, P90 2.880 s, $0.00 | [`reports/reliability.json`](reports/reliability.json) |
 | Live single-sandbox run: SAVE20 stacking reproduced, cleanup confirmed, 102.39 s agent clock | [`reports/live-evidence/live-visible-guest-2026-11-07.json`](reports/live-evidence/live-visible-guest-2026-11-07.json) |
 | Live recovery: step-7 HTTP 503 → fresh sandbox → retry reproduced the defect; both sandboxes deleted | [`reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json`](reports/live-evidence/runs/live-recovery-20261107T152529Z/record.json) |
+| Live console exploration: TodoMVC, 8 actions, 2 saved tests, 0 issues, cleanup confirmed in 29.68 s | [`reports/evidence/console-live-todomvc-2026-11-08.json`](reports/evidence/console-live-todomvc-2026-11-08.json) |
 | Generated tests: 4/4 expectations met (reproduction + regression, broken + fixed) | [`reports/evidence/test-matrix.json`](reports/evidence/test-matrix.json) |
 | Controlled step-7 HTTP 503: fresh sandbox, redeploy, retry, complete | [`reports/failure_trace.jsonl`](reports/failure_trace.jsonl) |
 | Prompt-injection command blocked before dispatch, host canary unchanged | [`reports/containment.json`](reports/containment.json) |
@@ -540,6 +541,21 @@ not yet verified from this repository. At the configured size rate, a 20-run
 evaluation is estimated at well under $1. Never reuse mock numbers as live
 results.
 
+### Live console validation
+
+A live console exploration against `https://demo.playwright.dev/todomvc/` used a
+4-step budget with the AI planner disabled. It visited one page, performed 8
+actions, saved 2 regression tests, found 0 issues, and confirmed sandbox
+deletion in 29.68 s. The sandbox booted in 4.08 s, and the provider delete was
+confirmed by Celesto.
+
+![Live console exploration of TodoMVC](reports/evidence/console-live-todomvc-step-01.jpg)
+
+The committed record is
+[`reports/evidence/console-live-todomvc-2026-11-08.json`](reports/evidence/console-live-todomvc-2026-11-08.json);
+the second screenshot is
+[`reports/evidence/console-live-todomvc-step-02.jpg`](reports/evidence/console-live-todomvc-step-02.jpg).
+
 ### Reproduce the live run
 
 [`scripts/run_live_single.py`](scripts/run_live_single.py) is the reproducible
@@ -749,8 +765,9 @@ runs show 3 PASS / 1 FAIL with a failure screenshot and confirmed cleanup. A
 live console exploration has also been validated against
 `https://demo.playwright.dev/todomvc/` with a 4-step budget and the AI planner
 disabled: 8 actions, 2 screenshots, 2 saved tests, 0 issues, and cleanup
-confirmed in 29.68 s. That run lives in the local console store, not in the
-committed `reports/` tree. Arbitrary public-website compatibility is otherwise
+confirmed in 29.68 s. The committed record and screenshots are linked under
+[Live console validation](#live-console-validation). Arbitrary public-website
+compatibility is otherwise
 unverified; the initial scope is public, no-login pages. The demo fixture starts
 broken, so the default regression baseline already fails the coupon test; the
 PASS→FAIL `newly_failing` transition is covered by unit tests rather than this

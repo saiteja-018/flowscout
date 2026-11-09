@@ -1,0 +1,209 @@
+{
+  "run": {
+    "run_id": "run_431b2488247d",
+    "project_id": "prj_ec22ba80b5c3",
+    "kind": "exploration",
+    "mode": "live",
+    "target_url": "https://demo.playwright.dev/todomvc/",
+    "status": "succeeded",
+    "phase": "completed",
+    "progress": 100,
+    "sandbox_name": "sbx-ha2174kbo154",
+    "provider_id": "cmp_b60f0a5eaa7f",
+    "cleanup_ok": true,
+    "cleanup_message": "Celesto Cloud delete confirmed",
+    "error": "",
+    "summary": {
+      "issues": 0,
+      "use_ai": false,
+      "actions": 8,
+      "sandbox": {
+        "name": "sbx-ha2174kbo154",
+        "provider_id": "cmp_b60f0a5eaa7f",
+        "boot_to_ready_s": 4.08
+      },
+      "max_steps": 4,
+      "duration_s": 16.48,
+      "planner_mode": "scripted_heuristic",
+      "project_name": "TodoMVC live check",
+      "tests_reused": 0,
+      "pages_visited": 1,
+      "browser_runtime": "celesto_guest_playwright",
+      "tests_generated": 2
+    },
+    "issues": [],
+    "actions": [
+      {
+        "ts": "2026-11-08T09:10:11.310190+00:00",
+        "role": "setup",
+        "step": 1,
+        "error": "",
+        "value": "https://demo.playwright.dev/todomvc/",
+        "output": "https://demo.playwright.dev/todomvc/#/",
+        "success": true,
+        "wall_ms": 302.3,
+        "selector": "",
+        "attribute": "",
+        "screenshot": "",
+        "action_type": "navigate",
+        "description": "Open the target website"
+      },
+      {
+        "ts": "2026-11-08T09:10:11.310209+00:00",
+        "role": "setup",
+        "step": 1,
+        "error": "",
+        "value": "",
+        "output": "waited 1200ms",
+        "success": true,
+        "wall_ms": 1209.7,
+        "selector": "",
+        "attribute": "",
+        "screenshot": "",
+        "action_type": "wait",
+        "description": "Let the page settle"
+      },
+      {
+        "ts": "2026-11-08T09:10:11.310212+00:00",
+        "role": "setup",
+        "step": 1,
+        "error": "",
+        "value": "",
+        "output": "page snapshot",
+        "success": true,
+        "wall_ms": 10.7,
+        "selector": "",
+        "attribute": "",
+        "screenshot": "",
+        "action_type": "snapshot",
+        "description": "Read the page structure"
+      },
+      {
+        "ts": "2026-11-08T09:10:11.310218+00:00",
+        "role": "setup",
+        "step": 1,
+        "error": "",
+        "value": "",
+        "output": "step-00-1794129010798.jpg",
+        "success": true,
+        "wall_ms": 93.4,
+        "selector": "",
+        "attribute": "",
+        "screenshot": "step-00-1794129010798-917a98.jpg",
+        "action_type": "screenshot",
+        "description": "Capture evidence: Homepage"
+      },
+      {
+        "ts": "2026-11-08T09:10:14.105609+00:00",
+        "role": "explore",
+        "step": 2,
+        "error": "",
+        "value": "FlowScout QA",
+        "output": "",
+        "success": true,
+        "wall_ms": 42.8,
+        "selector": "[placeholder='What needs to be done?']",
+        "attribute": "",
+        "screenshot": "",
+        "action_type": "fill",
+        "description": "Fill What needs to be done?"
+      },
+      {
+        "ts": "2026-11-08T09:10:14.105630+00:00",
+        "role": "explore",
+        "step": 2,
+        "error": "",
+        "value": "",
+        "output": "waited 900ms",
+        "success": true,
+        "wall_ms": 903.8,
+        "selector": "",
+        "attribute": "",
+        "screenshot": "",
+        "action_type": "wait",
+        "description": "Let the page settle"
+      },
+      {
+        "ts": "2026-11-08T09:10:14.105639+00:00",
+        "role": "explore",
+        "step": 2,
+        "error": "",
+        "value": "",
+        "output": "page snapshot",
+        "success": true,
+        "wall_ms": 6.6,
+        "selector": "",
+        "attribute": "",
+        "screenshot": "",
+        "action_type": "snapshot",
+        "description": "Read the page structure"
+      },
+      {
+        "ts": "2026-11-08T09:10:14.105646+00:00",
+        "role": "explore",
+        "step": 2,
+        "error": "",
+        "value": "",
+        "output": "step-00-1794129013617.jpg",
+        "success": true,
+        "wall_ms": 53.3,
+        "selector": "",
+        "attribute": "",
+        "screenshot": "step-00-1794129013617-754dff.jpg",
+        "action_type": "screenshot",
+        "description": "Capture evidence: Fill What needs to be done?"
+      }
+    ],
+    "logs": [
+      {
+        "ts": "2026-11-08T09:09:57.690870+00:00",
+        "level": "info",
+        "message": "Starting exploration of https://demo.playwright.dev/todomvc/"
+      },
+      {
+        "ts": "2026-11-08T09:10:07.942862+00:00",
+        "level": "info",
+        "message": "Browser runtime: celesto_guest_playwright"
+      },
+      {
+        "ts": "2026-11-08T09:10:11.327565+00:00",
+        "level": "info",
+        "message": "Heuristic chose Fill What needs to be done?"
+      },
+      {
+        "ts": "2026-11-08T09:10:14.124524+00:00",
+        "level": "info",
+        "message": "No safe unexplored candidates remain"
+      },
+      {
+        "ts": "2026-11-08T09:10:14.155710+00:00",
+        "level": "info",
+        "message": "Generated 2 validated regression test(s)"
+      }
+    ],
+    "screenshots": [
+      {
+        "kind": "setup",
+        "name": "step-00-1794129010798-917a98.jpg",
+        "step": 1,
+        "caption": "Step 1: Capture evidence: Homepage"
+      },
+      {
+        "kind": "explore",
+        "name": "step-00-1794129013617-754dff.jpg",
+        "step": 2,
+        "caption": "Step 2: Capture evidence: Fill What needs to be done?"
+      }
+    ],
+    "generated_test_ids": [
+      "tc_03071e789842",
+      "tc_f948012f2bda"
+    ],
+    "started_at": "2026-11-08T09:09:44.576367+00:00",
+    "finished_at": "2026-11-08T09:10:14.253459+00:00",
+    "duration_s": 29.68,
+    "created_at": "2026-11-08T09:09:44.562923+00:00",
+    "updated_at": "2026-11-08T09:10:19.206212+00:00"
+  },
+  "results": []
+}
