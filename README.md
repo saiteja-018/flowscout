@@ -13,6 +13,10 @@ It ships with a deterministic ShopDemo target, an optional LLM planner that
 proposes each step from a validated candidate set, a Celesto Cloud adapter, a
 PostgreSQL run ledger, a server-rendered QA console, and a recorded evaluation.
 
+**Live demo:** [QA console](https://flowscout.onrender.com/console) ·
+[Regression runner](https://flowscout.onrender.com/console/regression) ·
+[ShopDemo target](https://flowscout-shopdemo.onrender.com)
+
 ![Live guest-browser run: six SAVE20 applications produce a -$25.99 total](reports/live-evidence/live-visible-step-09-2026-11-07.jpg)
 
 *Live run `live-visible-guest-2026-11-07` inside a Celesto Micro sandbox: the
@@ -36,6 +40,31 @@ The mock and live boundaries are explicit. Mock timings measure orchestration an
 a real local Chromium, not Celesto boot time. The live record is one sandbox, not
 a 20-run benchmark. The platform CDP gateway returned HTTP 501 on Micro, so the
 verified browser path is the in-guest Playwright browser; CDP remains unverified.
+
+## Deployed demo
+
+The product runs on Render's free plan:
+
+| Surface | URL | What it is |
+|---|---|---|
+| QA console | <https://flowscout.onrender.com/console> | Dashboard, run history, tests, reports |
+| Regression runner | <https://flowscout.onrender.com/console/regression> | Run saved tests against a fresh sandbox |
+| ShopDemo | <https://flowscout-shopdemo.onrender.com> | Deterministic checkout target (redirects to `/shop/`) |
+
+| Console dashboard | New QA run |
+|---|---|
+| ![FlowScout console dashboard](reports/evidence/flowscout_console_live.png) | ![New QA run form](reports/evidence/flowscout_new_run.png) |
+
+| ShopDemo storefront | Checkout coupon validation | Stacked SAVE20 defect |
+|---|---|---|
+| ![ShopDemo storefront](reports/evidence/shopdemo_home_live.png) | ![Checkout coupon validation](reports/evidence/shopdemo_checkout_coupon.png) | ![Stacked coupon defect](reports/evidence/shopdemo_stacked_coupon_defect.png) |
+
+The deployed console is a demo, not a hardened multi-tenant service: it has no
+user authentication and it is configured for live Celesto execution. Live runs
+still require the explicit authorization checkbox and consume free-trial credits;
+see [Render deployment](#render-deployment). The free plan sleeps after
+inactivity, and the local console store is ephemeral, so the demo can start empty
+after a restart.
 
 ## Problem statement
 
@@ -708,24 +737,27 @@ validated actions and is never executed as code. Live credentials are read from
 the environment and are never rendered into a page or API response. Mock mode is
 a local-development surface: it intentionally permits loopback/private targets
 for the bundled demo, so do not expose it on an untrusted public host. The
-Docker image ships Chromium and its system libraries so mock console runs work;
-the console is still not a public execution service.
+Docker image ships Chromium and its system libraries so mock console runs work.
+The Render demo is a public execution surface with no user authentication; keep
+live credentials scoped and monitor credit use, or disable live mode before
+broad sharing.
 
 **Honest limitations.** The console's end-to-end workflow has been validated in
-mock mode against the bundled ShopDemo only: exploration detects the coupon
-issue, generates four unique tests, deduplicates them on re-exploration, and
-regression runs show 3 PASS / 1 FAIL with a failure screenshot and confirmed
-cleanup. Live Celesto console runs are implemented but were not executed while
-building this console because they require explicit authorization and credit
-spend. A read-only Celesto API check (list computers) confirmed the configured
-credentials and connection; it created no sandbox and spent no credits. Only the
-protected sandbox `cmp_3e12f5354e89` was present at that check. Arbitrary
-public-website compatibility is unverified; the initial scope is public, no-login
-pages. The demo fixture starts broken, so the default regression baseline
-already fails the coupon test; the PASS→FAIL `newly_failing` transition is
-covered by unit tests rather than this demo. The PostgreSQL console backend was
-exercised in the Compose stack, including persistence across an API restart;
-host-level validation used the local file-backed store.
+mock mode against the bundled ShopDemo: exploration detects the coupon issue,
+generates four unique tests, deduplicates them on re-exploration, and regression
+runs show 3 PASS / 1 FAIL with a failure screenshot and confirmed cleanup. A
+live console exploration has also been validated against
+`https://demo.playwright.dev/todomvc/` with a 4-step budget and the AI planner
+disabled: 8 actions, 2 screenshots, 2 saved tests, 0 issues, and cleanup
+confirmed in 29.68 s. That run lives in the local console store, not in the
+committed `reports/` tree. Arbitrary public-website compatibility is otherwise
+unverified; the initial scope is public, no-login pages. The demo fixture starts
+broken, so the default regression baseline already fails the coupon test; the
+PASS→FAIL `newly_failing` transition is covered by unit tests rather than this
+demo. The PostgreSQL console backend was exercised in the Compose stack,
+including persistence across an API restart; host-level validation used the
+local file-backed store. The public Render console uses the local file store and
+is ephemeral.
 
 Memory-backed local demo:
 
@@ -779,20 +811,54 @@ set `CELESTO_MODE=mock` and leave `CELESTO_API_KEY` empty.
 
 ### Render deployment
 
-[`render.yaml`](render.yaml) defines the public deployment as a Docker web
-service on Render's free plan (Oregon), with `FLOWSCOUT_LEDGER=memory`, a
-`/health` check, and auto-deploy from the repository.
+Two Render web services are deployed from this repository:
 
-The public deployment is configured without live Celesto execution:
+| Service | URL | Purpose |
+|---|---|---|
+| `flowscout` | <https://flowscout.onrender.com/console> | QA console, API, reports |
+| `flowscout-shopdemo` | <https://flowscout-shopdemo.onrender.com> | Standalone ShopDemo target |
 
-- `uvicorn` binds `$PORT`, which Render supplies (`Dockerfile`).
-- The Celesto SDK is not installed and no `CELESTO_API_KEY` is configured.
-- Live runs stay fail-closed: no key means an authorized live request gets 409.
-- The committed `reports/` tree is baked into the image and served at
-  `/reports/...`, so report and evidence links work offline.
-- The image also ships Chromium for local mock console runs. Do not use a public
-  Render service as a mock execution surface: mock mode intentionally permits
-  loopback/private targets for the bundled demo.
+[`render.yaml`](render.yaml) defines the `flowscout` Docker web service on the
+free plan (Oregon), with `FLOWSCOUT_LEDGER=memory`, a `/health` check, and
+auto-deploy from the repository. `uvicorn` binds `$PORT`, which Render supplies
+(`Dockerfile`). The committed `reports/` tree is baked into the image and served
+at `/reports/...`.
+
+The ShopDemo service runs the standalone ASGI export from the same codebase:
+
+```text
+uvicorn app.target_saas_app:shopdemo_app --host 0.0.0.0 --port $PORT
+```
+
+Its root redirects to `/shop/`; its health endpoint is `/shop/api/health`.
+
+The deployed console currently reports:
+
+- `CELESTO_MODE=live` with a configured key. Live runs remain gated by the
+  explicit authorization checkbox and are serialized; each run creates a fresh
+  Celesto sandbox and consumes free-trial credits.
+- Effective sandbox size `micro`; the free trial rejects larger sizes.
+- No LLM planner configured. Exploration uses the deterministic candidate order.
+- The local file-backed console store. Run metadata and evidence live inside the
+  container filesystem, which is ephemeral on Render's free plan, so a restart
+  or redeploy can remove old runs.
+- `CELESTO_KEEP_COMPUTER_IDS` includes the protected sandbox
+  `cmp_3e12f5354e89`; cleanup never touches it.
+
+**Public-demo warning.** The console has no user authentication. Because the
+Render service has live Celesto credentials, anyone who can reach the run form
+can request a live sandbox by checking the authorization box, consuming trial
+credits. Treat this deployment as a demo, not a multi-tenant service. Before
+broad public traffic, either set `CELESTO_MODE=mock` and remove
+`CELESTO_API_KEY` on the Render service, or put authentication and per-user
+quotas in front of `/console`. Mock mode intentionally permits loopback targets
+for the bundled demo, so do not expose mock mode as an untrusted public
+execution surface either.
+
+To exercise the deployed ShopDemo from the deployed console, submit the absolute
+`https://flowscout-shopdemo.onrender.com/shop/` URL. The console's relative
+"Use ShopDemo" link only resolves when the console and the fixture share a host,
+as they do in Docker Compose or a local process.
 
 Deploy by connecting the repository in Render and selecting the existing
 `render.yaml`, or run the image locally:
@@ -829,8 +895,9 @@ different host port, submit the absolute `http://127.0.0.1:8080/shop/` URL
 instead.
 
 Free-plan services sleep after inactivity, so the first request after a pause
-can be slow. A fresh live Celesto run remains an admin-only, opt-in repository
-action (`scripts/run_live_single.py`), never a public website route.
+can be slow. The public console can start live runs; the repository also keeps
+the reproducible `scripts/run_live_single.py` runner for committed live
+evidence.
 
 ## Repository map
 
@@ -850,7 +917,7 @@ app/evidence_io.py          atomic report/evidence writes
 app/provenance.py           git commit/branch/dirty provenance capture
 app/report_schemas.py       report schemas + cross-file verifier
 app/sandbox_runner.py       policy, audit log, REST cloud client, adapters
-app/target_saas_app.py      deterministic ShopDemo fixture (+ --serve guest mode)
+app/target_saas_app.py      ShopDemo fixture (+ --serve guest mode, shopdemo_app ASGI export)
 app/guest_healthcheck.py    in-guest fixture health probe
 scripts/run_live_demo.py    evidence/evaluation orchestrator
 scripts/run_live_single.py  reproducible live run + recovery record runner
@@ -867,7 +934,7 @@ demo/walkthrough.mp4        real browser recording of the workflow
 seeds/01_runs.sql           PostgreSQL seed
 .github/workflows/ci.yml    tests + verifier + two-run mock smoke
 Dockerfile                  Docker image with Chromium ($PORT, /health)
-render.yaml                 Render free-plan Docker web service
+render.yaml                 Render free-plan Docker web service (console)
 LICENSE                     MIT license
 ```
 
