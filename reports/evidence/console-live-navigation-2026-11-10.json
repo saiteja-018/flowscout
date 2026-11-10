@@ -1,0 +1,137 @@
+{
+  "run": {
+    "run_id": "run_626744787ea1",
+    "project_id": "prj_f837e96bf983",
+    "kind": "exploration",
+    "mode": "live",
+    "target_url": "https://flowscout.onrender.com/shop/",
+    "status": "succeeded",
+    "phase": "completed",
+    "progress": 100,
+    "sandbox_name": "sbx-eygm2iyhpmg9",
+    "provider_id": "cmp_cc2e5b38b2bb",
+    "cleanup_ok": true,
+    "cleanup_message": "Celesto Cloud delete confirmed",
+    "error": "",
+    "summary": {
+      "pages_visited": 1,
+      "actions": 4,
+      "issues": 0,
+      "tests_generated": 1,
+      "max_steps": 8,
+      "duration_s": 12.46,
+      "project_name": "Deployed ShopDemo navigation retry check",
+      "planner_mode": "scripted_heuristic",
+      "browser_runtime": "celesto_guest_playwright",
+      "tests_reused": 0,
+      "sandbox": {
+        "name": "sbx-eygm2iyhpmg9",
+        "provider_id": "cmp_cc2e5b38b2bb",
+        "boot_to_ready_s": 13.956
+      },
+      "use_ai": false
+    },
+    "issues": [],
+    "actions": [
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "navigate",
+        "selector": "",
+        "value": "https://flowscout.onrender.com/shop/",
+        "attribute": "",
+        "description": "Open the target website",
+        "success": true,
+        "output": "https://flowscout.onrender.com/shop/",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 196.6,
+        "ts": "2026-11-10T05:23:35.399442+00:00"
+      },
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "wait",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Let the page settle",
+        "success": true,
+        "output": "waited 1200ms",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 1202.2,
+        "ts": "2026-11-10T05:23:35.399464+00:00"
+      },
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "snapshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Read the page structure",
+        "success": true,
+        "output": "page snapshot",
+        "error": "",
+        "screenshot": "",
+        "wall_ms": 11.3,
+        "ts": "2026-11-10T05:23:35.399473+00:00"
+      },
+      {
+        "step": 1,
+        "role": "setup",
+        "action_type": "screenshot",
+        "selector": "",
+        "value": "",
+        "attribute": "",
+        "description": "Capture evidence: Homepage",
+        "success": true,
+        "output": "step-00-1794288214343.jpg",
+        "error": "",
+        "screenshot": "step-00-1794288214343-645c96.jpg",
+        "wall_ms": 115.9,
+        "ts": "2026-11-10T05:23:35.399483+00:00"
+      }
+    ],
+    "logs": [
+      {
+        "ts": "2026-11-10T05:23:22.965323+00:00",
+        "level": "info",
+        "message": "Starting exploration of https://flowscout.onrender.com/shop/"
+      },
+      {
+        "ts": "2026-11-10T05:23:32.512923+00:00",
+        "level": "info",
+        "message": "Browser runtime: celesto_guest_playwright"
+      },
+      {
+        "ts": "2026-11-10T05:23:35.403846+00:00",
+        "level": "info",
+        "message": "No safe unexplored candidates remain"
+      },
+      {
+        "ts": "2026-11-10T05:23:35.418827+00:00",
+        "level": "info",
+        "message": "Generated 1 validated regression test(s)"
+      }
+    ],
+    "screenshots": [
+      {
+        "name": "step-00-1794288214343-645c96.jpg",
+        "caption": "Step 1: Capture evidence: Homepage",
+        "step": 1,
+        "kind": "setup"
+      }
+    ],
+    "generated_test_ids": [
+      "tc_36ae7c191633"
+    ],
+    "started_at": "2026-11-10T05:23:01.523476+00:00",
+    "finished_at": "2026-11-10T05:23:35.426750+00:00",
+    "duration_s": 33.9,
+    "created_at": "2026-11-10T05:23:01.518361+00:00",
+    "updated_at": "2026-11-10T05:23:39.855340+00:00"
+  },
+  "results": []
+}

@@ -577,6 +577,22 @@ The deployed mock check that confirmed the same behavior after the fix is
 its probe screenshot is
 [`reports/evidence/console-mock-shopdemo-2026-11-09-step-01.jpg`](reports/evidence/console-mock-shopdemo-2026-11-09-step-01.jpg).
 
+On 2026-11-10 the live path was revalidated after adding a 15 s guest
+navigation timeout and one retry for slow initial navigations. The run again
+verified `/shop/api/health`, reached checkout, applied `SAVE20` twice, recorded
+`Applied: SAVE20 x2` at `$77.98`, saved four tests, and confirmed sandbox
+deletion in 20.95 s (6.87 s sandbox boot). The committed record is
+[`reports/evidence/console-live-shopdemo-2026-11-10.json`](reports/evidence/console-live-shopdemo-2026-11-10.json)
+and the probe screenshot is
+[`reports/evidence/console-live-shopdemo-2026-11-10-step-01.jpg`](reports/evidence/console-live-shopdemo-2026-11-10-step-01.jpg).
+A separate live check against the previously timing-out console-hosted URL
+completed successfully
+([`reports/evidence/console-live-navigation-2026-11-10.json`](reports/evidence/console-live-navigation-2026-11-10.json));
+the retry path itself is covered by unit tests. Live coupon probing stays scoped
+to the dedicated fixture host: use
+`https://flowscout-shopdemo.onrender.com/shop/`, because the console host is not
+on the verified-ShopDemo allowlist.
+
 ### Reproduce the live run
 
 [`scripts/run_live_single.py`](scripts/run_live_single.py) is the reproducible
