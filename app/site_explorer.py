@@ -1509,6 +1509,36 @@ class PublicSiteExplorer:
             initial_results = data.get("results") or []
             navigation_ok = bool(initial_results) and bool(initial_results[0].get("success"))
             snapshot = self._snapshot_from(data)
+            if not navigation_ok:
+                detail = (
+                    (initial_results[0].get("error") if initial_results else "")
+                    or data.get("error")
+                    or "Navigation may have failed."
+                )
+                self._log(
+                    f"Initial navigation did not complete ({detail}); retrying once",
+                    "warn",
+                )
+                retry_actions = [
+                    BrowserAction(
+                        ActionType.NAVIGATE,
+                        value=self.target_url,
+                        timeout_ms=15000,
+                        description="Retry opening the target website",
+                    ),
+                    BrowserAction(
+                        ActionType.WAIT, timeout_ms=1200, description="Let the page settle"
+                    ),
+                    BrowserAction(ActionType.SNAPSHOT, description="Read the page structure"),
+                ]
+                self._maybe_screenshot(retry_actions, step=1, caption="Homepage")
+                data = self._execute(retry_actions, step=1)
+                self._record_batch(retry_actions, data, step=1, role="setup")
+                initial_results = data.get("results") or []
+                navigation_ok = bool(initial_results) and bool(
+                    initial_results[0].get("success")
+                )
+                snapshot = self._snapshot_from(data)
             if not navigation_ok or snapshot is None:
                 detail = (
                     (initial_results[0].get("error") if initial_results else "")

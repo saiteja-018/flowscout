@@ -21,7 +21,7 @@
     "app/report_schemas.py": "1449dd169c42402f5850c07cfedf0b2649cb68616678e7a99944770cda4192b6",
     "app/provenance.py": "1c3b45932a8e7f49bfe50c561708528ecb658d86d0ed9b568b0f5f16a0e25f92",
     "app/guest_browser_launcher.py": "6aa742c85298e35957db4ac71f9124e91572324b678535a49df2a15a23668b1f",
-    "app/guest_browser_worker.py": "e1eed2d459eb29e53a6dc2846a484a5e85b7f1431aca3d1f0de4682ff3c3fa06",
+    "app/guest_browser_worker.py": "9432be11c0bd1e584843f67d62692ee1d551a7811f6faaa330a5fc4bddd6df96",
     "app/guest_healthcheck.py": "6d67b4031ffb28b3cf7f9c3e79e857e0e66aae76047cf8e335d721b611cdcf83",
     "app/main.py": "d79048d9341a73a4f6e5e62ee57f4da6407116644ca7e503abf93eca647dfff8",
     "app/target_saas_app.py": "5bf0d9a7517426e95afb84bf1540d407e3cd39b770bd5b8c1f847ceeff0a99f9",

@@ -388,7 +388,12 @@ def execute_action(
             status = response.status
             output = f"HTTP {status}"
         elif kind == "navigate":
-            response = page.goto(action["value"], wait_until="domcontentloaded")
+            navigation_timeout = max(15000, timeout)
+            response = page.goto(
+                action["value"],
+                wait_until="domcontentloaded",
+                timeout=navigation_timeout,
+            )
             if response is not None and response.status >= 400:
                 raise RuntimeError(f"navigation returned HTTP {response.status}")
             if _target_is_public(base_url) and _is_private_literal(page.url):
@@ -517,6 +522,7 @@ def _run_actions_with_diagnostics(
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.pages[0] if context.pages else context.new_page()
         page.set_default_timeout(7000)
+        page.set_default_navigation_timeout(15000)
         diagnostics = attach_diagnostics(page, base_url)
         for index, action in enumerate(actions):
             row = execute_action(

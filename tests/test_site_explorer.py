@@ -71,6 +71,53 @@ class FakeDriver:
         return {"results": rows, "diagnostics": {}, "error": ""}
 
 
+def _page_snapshot(url: str = "https://example.com/") -> dict:
+    return {
+        "url": url,
+        "title": "Example",
+        "headings": [{"level": 1, "text": "Welcome"}],
+        "links": [],
+        "links_count": 0,
+        "buttons": [],
+        "buttons_count": 0,
+        "inputs": [],
+        "inputs_count": 0,
+        "forms": [],
+        "images": [],
+        "text_excerpt": "Welcome",
+    }
+
+
+class RunFakeDriver(FakeDriver):
+    """Fake driver that returns a page snapshot and can fail early navigations."""
+
+    def __init__(self, *, snapshot: dict, fail_navigations: int = 0) -> None:
+        super().__init__()
+        self.snapshot = snapshot
+        self.fail_navigations = fail_navigations
+        self.navigate_count = 0
+
+    def execute_actions(self, actions: list[dict], *, stop_on_failure: bool = False) -> dict:
+        data = super().execute_actions(actions, stop_on_failure=stop_on_failure)
+        rows = data["results"]
+        for row, action in zip(rows, actions):
+            kind = str(action.get("action_type") or "")
+            if kind == "navigate":
+                self.navigate_count += 1
+                if self.navigate_count <= self.fail_navigations:
+                    row["success"] = False
+                    row["error"] = "TimeoutError: Page.goto: Timeout 7000ms exceeded."
+                    row["output"] = ""
+                else:
+                    row["success"] = True
+                    row["error"] = ""
+                    row["output"] = str(action.get("value") or "")
+            elif kind == "snapshot":
+                row["snapshot"] = self.snapshot
+                row["output"] = "page snapshot"
+        return data
+
+
 def _valid_test() -> dict:
     return {
         "test_id": "tc_valid",
@@ -389,3 +436,47 @@ def test_loopback_shopdemo_allows_checkout_navigation(tmp_path: Path) -> None:
         )
         is True
     )
+
+
+def test_run_retries_initial_navigation_timeout_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(socket, "getaddrinfo", _resolver("93.184.216.34"))
+    driver = RunFakeDriver(snapshot=_page_snapshot(), fail_navigations=1)
+    explorer = PublicSiteExplorer(
+        driver=driver,
+        target_url="https://example.com/",
+        evidence_dir=tmp_path,
+        allow_private=False,
+    )
+
+    result = explorer.run()
+
+    assert result["status"] == "succeeded"
+    assert result["error"] == ""
+    assert driver.navigate_count == 2
+    retry_navigate = driver.calls[1][0]
+    assert retry_navigate["action_type"] == "navigate"
+    assert retry_navigate["timeout_ms"] == 15000
+    assert any("retrying once" in log["message"] for log in result["logs"])
+    assert all(issue["category"] != "navigation_failed" for issue in result["issues"])
+
+
+def test_run_fails_when_navigation_timeout_persists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(socket, "getaddrinfo", _resolver("93.184.216.34"))
+    driver = RunFakeDriver(snapshot=_page_snapshot(), fail_navigations=2)
+    explorer = PublicSiteExplorer(
+        driver=driver,
+        target_url="https://example.com/",
+        evidence_dir=tmp_path,
+        allow_private=False,
+    )
+
+    result = explorer.run()
+
+    assert result["status"] == "failed"
+    assert "could not be opened" in result["error"]
+    assert driver.navigate_count == 2
+    assert any(issue["category"] == "navigation_failed" for issue in result["issues"])
